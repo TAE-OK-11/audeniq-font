@@ -1,6 +1,6 @@
 # Audeniq Sans · 어데닉 산스
 
-AUDENIQ의 제품 서체예요. [Pretendard](https://github.com/orioncactus/pretendard) 1.3.9를 바탕으로 한글 자간, 숫자·영문 굵기, 금액의 빼기 기호를 어데닉 화면에 맞게 다듬고, 어데닉 로고를 글자로 넣었어요. 무엇을 왜 바꿨는지는 [DESIGN.md](DESIGN.md)에 있어요.
+AUDENIQ의 제품 서체예요. [Pretendard](https://github.com/orioncactus/pretendard) 1.3.9를 바탕으로 토스 프로덕트 산스·Apple SD 산돌고딕 Neo의 비율(굵기, 숫자 크기, 띄어쓰기, 가운뎃점, 한글 높이)을 옮기고, 한글 자간·금액 빼기 기호·어데닉 로고를 더했어요. 무엇을 왜 바꿨는지는 [DESIGN.md](DESIGN.md)에 있어요.
 
 ## 파일
 
@@ -29,7 +29,7 @@ python3 build/build.py --check     # 원본을 npm에서 받아 해시 확인 �
 python3 build/build.py --variable-only   # 가변 글꼴만 (빠름)
 ```
 
-원본(`sources/`)은 저장소에 넣지 않아요. 빌드가 npm의 `pretendard@1.3.9`를 받아 SHA-1을 확인해요. `tests/check.py`는 이름, 한글 폭, 숫자·영문 획 굵기, 빼기 기호 규칙, 고정폭 숫자, 세로 중심, 로고 글자, 고정 굵기 글꼴의 기능 이름을 검사해요.
+원본(`sources/`)은 저장소에 넣지 않아요. 빌드가 npm의 `pretendard@1.3.9`를 받아 SHA-1을 확인해요. `tests/check.py`는 이름, 굵기 대응, 한글 폭·높이, 숫자 크기·폭, 띄어쓰기·가운뎃점, 빼기 기호 규칙, 고정폭 숫자, 세로 중심, 로고 글자, 고정 굵기 글꼴의 기능 이름을 검사해요.
 
 ## 라이선스
 

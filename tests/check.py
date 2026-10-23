@@ -51,21 +51,35 @@ check(f["OS/2"].achVendID == "AUDQ", "제작사 코드 AUDQ")
 hangul = [u for u in range(0xAC00, 0xD7A4)]
 diff = {src["hmtx"][src.getBestCmap()[u]][0] - f["hmtx"][cmap[u]][0] for u in hangul}
 check(diff == {40}, f"한글 11,172자 폭 -40유닛 (차이 {sorted(diff)})")
-# 숫자·영문·통화 기호는 한글보다 살짝 굵게: 400에서 세로 획이 원본보다 굵고, 폭 변화는 2% 안.
-for ch in "Il1H0₩":
-    g = cmap[ord(ch)]
-    grow = f["hmtx"][g][0] - src["hmtx"][g][0]
-    check(0 <= grow <= src["hmtx"][g][0] * 0.02, f"'{ch}' 폭 +{grow}유닛 (2% 안)")
-for ch, w, least in (("l", 400, 4), ("l", 100, 1), ("I", 400, 4)):
-    a, b = ink(f, cmap[ord(ch)], w), ink(src, cmap[ord(ch)], w)
-    stem_new, stem_old = a[2] - a[0], b[2] - b[0]
-    check(stem_new - stem_old >= least, f"'{ch}' 굵기 {w}: 세로 획 {stem_old:.0f} → {stem_new:.0f}")
-a, b = ink(f, "l", 930), ink(src, "l", 930)
-check(abs((a[2] - a[0]) - (b[2] - b[0])) < 1, "가장 굵은 930은 원본과 같은 굵기")
-for w in (100, 400, 900):
-    a = ink(f, "uniAC00", w)
-    b = ink(src, "uniAC00", w)
-    check(round(b[0] - a[0]) == 20 and round(b[2] - a[2]) == 20, f"'가' 잉크가 굵기 {w}에서 20유닛 왼쪽으로(양쪽 20씩)")
+# 굵기: CSS 굵기 → Pretendard 굵기(토스와 획이 같은 값). 양 끝은 그대로.
+for user, orig in ((100, 100), (400, 380), (700, 610), (930, 930)):
+    a, b = ink(f, "l", user), ink(src, "l", orig)
+    check(abs((a[2] - a[0]) - (b[2] - b[0])) <= 2, f"굵기 {user} = Pretendard {orig} ('l' 획 {a[2]-a[0]:.0f} / {b[2]-b[0]:.0f})")
+
+# 한글: 양쪽 20씩 좁히고 16 위로. (CSS 400 = Pretendard 380 모양)
+for user, orig in ((100, 100), (400, 380), (900, 610 + 320 * 200 / 230)):  # 700–930 사이는 직선
+    a, b = ink(f, "uniAC00", user), ink(src, "uniAC00", orig)
+    check(abs(b[0] - a[0] - 20) <= 1 and abs(b[2] - a[2] - 20) <= 1, f"'가' 굵기 {user}: 잉크가 20 왼쪽으로(양쪽 20씩)")
+    check(abs(a[1] - b[1] - 16) <= 1, f"'가' 굵기 {user}: 16 위로")
+
+# 숫자: 토스 높이(1522)로 키우고 옆 여백은 양쪽 15씩 줄인다. 기호(% ₩)는 키우기만.
+gsA = f.getGlyphSet(location={"wght": 400}, normalized=False)
+gsP = src.getGlyphSet(location={"wght": 380}, normalized=False)
+s_fig = 1522 / 1468
+for ch in "0148":
+    top = ink(f, cmap[ord(ch)], 400)[3]
+    want = round(src_ink := ink(src, cmap[ord(ch)], 380)[3]) * s_fig
+    check(abs(top - want) <= 3, f"'{ch}' 높이 {top:.0f} (Pretendard {src_ink:.0f} × 1.037)")
+    w_new, w_old = gsA[cmap[ord(ch)]].width, gsP[cmap[ord(ch)]].width
+    check(abs(w_new - (w_old * s_fig - 30)) <= 3, f"'{ch}' 폭 {w_new} (Pretendard {w_old} × 1.037 − 30)")
+check(abs(ink(f, cmap[ord("%")], 400)[3] - ink(src, cmap[ord("%")], 380)[3] * s_fig) <= 3, "'%'도 같이 커짐")
+check(abs(ink(f, "H", 400)[3] - 1448) <= 1, "대문자 높이는 그대로 1448")
+
+# 띄어쓰기·가운뎃점: 토스 비율.
+check(gsA[cmap[0x20]].width == 414 and f.getGlyphSet(location={"wght": 900}, normalized=False)[cmap[0x20]].width == 414, "띄어쓰기 414(0.20em), 모든 굵기")
+dot = ink(f, cmap[0xB7], 400)
+check(gsA[cmap[0xB7]].width == 1031 and abs((dot[1] + dot[3]) / 2 - 740) <= 2, f"가운뎃점 폭 1031, 높이 가운데 740 ({(dot[1]+dot[3])/2:.0f})")
+check(cmap.get(0x2027) == cmap[0xB7] and cmap.get(0x30FB) == cmap[0xB7], "U+2027·U+30FB도 같은 가운뎃점")
 
 # 숫자 앞 '-'는 빼기 모양, 코드·날짜·전화번호 안의 '-'는 그대로.
 cases = {

@@ -18,10 +18,6 @@ from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
 from fontTools.subset import Options, Subsetter
 from fontTools.ttLib import TTFont, newTable
 from fontTools.ttLib.tables import otTables
-from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
-from fontTools.ttLib.tables.TupleVariation import TupleVariation
-from fontTools.varLib.iup import iup_delta
-from fontTools.varLib.models import supportScalar
 from fontTools.varLib import instancer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -37,7 +33,7 @@ PRETENDARD_SHA1 = "b1f86d5a7a729f518974098fcf85f34fff3526b7"  # npm dist.shasum
 PRETENDARD_MEMBER = "package/dist/public/variable/PretendardVariable.ttf"
 SUBSET_MEMBER = "package/subset_glyphs.txt"
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 FAMILY = "Audeniq Sans"
 VENDOR = "AUDQ"
 
@@ -52,10 +48,20 @@ HANGUL_RANGES = [
     (0xD7B0, 0xD7FF),  # 자모 확장 B
 ]
 
-# 숫자·영문 굵기: 400에서 wght +30만큼(약 획 +5%). 한글은 그대로.
-LATIN_BOOST = 30
-LATIN_BOOST_RANGES = [(0x30, 0x39), (0x41, 0x5A), (0x61, 0x7A)]
-LATIN_BOOST_MARKS = ",.:;%₩$€¥£"  # 금액·비율에서 숫자 바로 옆에 붙는 기호와 통화 기호
+# 토스 프로덕트 산스·Apple SD 산돌고딕 Neo 비율 (DESIGN.md '잰 값' 표). 2048 UPM.
+FIGURE_SCALE = 1522 / 1468  # 숫자 높이: Pretendard 1468 → 토스 1522. 숫자가 대문자(1448)보다 커진다
+FIGURE_EXTRA = "%₩$€¥£"  # 숫자와 같이 커지는 기호
+FIGURE_TIGHTEN = 30  # 숫자 폭을 양옆 15씩 줄인다: 토스 숫자 옆 여백 94 vs 키운 Pretendard 108
+FIGURE_FEATURES = {"tnum", "pnum", "zero", "cv01", "cv02", "cv03", "cv04", "cv09", "cv13",
+                   "ss01", "ss02", "ss06", "ss08"}  # 이 기능들이 부르는 숫자 대체 글리프도 함께
+SPACE_WIDTH = 414  # 띄어쓰기: Pretendard 514(0.25em) → 토스 414(0.20em)
+HANGUL_RAISE = 16  # 한글을 영문 기준선보다 조금 위로(토스·SD 고딕 Neo). 줄 상자도 같이 올려 한글이 가운데
+# 굵기 다시 맞추기: 토스 Regular·Bold와 획 굵기가 같은 Pretendard 굵기(잰 값: l·ㅣ·ㅡ 획).
+# CSS 굵기 → Pretendard 굵기. 양 끝(45, 930)은 그대로라 가장 가늘고 가장 굵은 모양은 같다.
+WEIGHT_MAP = {45: 45, 100: 100, 400: 380, 700: 610, 930: 930}
+MIDDLE_DOT_WIDTH = 1031  # 가운뎃점 폭: Pretendard 520 → 토스 1031(약 0.5em)
+MIDDLE_DOT_CENTER = 740  # 가운뎃점 높이: 영문 x높이 가운데(633) → 한글 가운데
+MIDDLE_DOT_ALIASES = (0x2027, 0x30FB)  # 같은 모양으로 맞출 다른 가운뎃점(토스의 '중앙점 통일')
 
 # 굵기 축 이름(STAT/fvar)
 WEIGHTS = [
@@ -111,57 +117,143 @@ def tighten_hangul(font):
     return changed
 
 
-# ---------------------------------------------------------------- 2. 숫자·영문을 한글보다 살짝 굵게
+# ---------------------------------------------------------------- 2. 토스·SD 고딕 Neo 비율
 
-def _norm(w):
-    return {"wght": (w - 400) / (400 - 45) if w < 400 else (w - 400) / (930 - 400)}
-
-
-def _coords_at(font, name, loc):
-    """굵기 위치 loc에서 글리프 점 좌표(위상 점 4개 포함)."""
-    glyf, gvar = font["glyf"], font["gvar"]
-    coords, ctrl = glyf._getCoordinatesAndControls(name, font["hmtx"].metrics, None)
-    out = GlyphCoordinates(coords)
-    for tv in gvar.variations.get(name, []):
-        scalar = supportScalar(loc, tv.axes)
-        if not scalar:
-            continue
-        deltas = tv.coordinates
-        if None in deltas:
-            deltas = iup_delta(deltas, coords, ctrl.endPts)
-        out += GlyphCoordinates(deltas) * scalar
-    out.toInt()
-    return out
-
-
-def boost_latin(font):
-    """토스 프로덕트 산스처럼, 한글과 같은 굵기 값이면 얇아 보이는 숫자·영문을 조금 굵게.
-    각 마스터 위치의 외곽선을 조금 더 굵은 위치의 외곽선으로 바꾼다(원래 보간 안의 모양이라 새 모양이 생기지 않는다).
-    400에서 +LATIN_BOOST, 45에서 그 절반, 930(가장 굵음)은 그대로 — 굵을수록 차이가 줄어든다."""
+def _figure_glyphs(font, extra=FIGURE_EXTRA):
+    """숫자 0–9, 숫자 옆 기호, 그리고 숫자 기능(FIGURE_FEATURES)이 바꿔 넣는 대체 글리프 전부."""
     cmap = font.getBestCmap()
-    names = {cmap[u] for lo, hi in LATIN_BOOST_RANGES for u in range(lo, hi + 1) if u in cmap}
-    names |= {cmap[ord(c)] for c in LATIN_BOOST_MARKS}
-    # 고정폭·대체 숫자(cv/ss/tnum이 부르는 uniE06B–uniE080)도 같은 획 굵기여야 한다.
-    names |= {n for n in font.getGlyphOrder() if n.startswith(("uniE06", "uniE07", "uniE080"))}
-    shift = {45: 45 + LATIN_BOOST // 2, 400: 400 + LATIN_BOOST, 930: 930}
+    names = {cmap[ord(c)] for c in "0123456789" + extra}
+    gsub = font["GSUB"].table
+    lookups = {i for r in gsub.FeatureList.FeatureRecord if r.FeatureTag in FIGURE_FEATURES
+               for i in r.Feature.LookupListIndex}
+    grew = True
+    while grew:
+        grew = False
+        for i in lookups:
+            for st in gsub.LookupList.Lookup[i].SubTable:
+                st = getattr(st, "ExtSubTable", st)
+                for k, v in (getattr(st, "mapping", None) or {}).items():
+                    if k in names and v not in names:
+                        names.add(v)
+                        grew = True
+    return names
+
+
+def scale_figures(font):
+    """숫자를 토스처럼 크게. 원점 기준으로 외곽선·굵기 차이값·폭을 모두 FIGURE_SCALE배.
+    부품 글리프는 부품 위치를 늘리고, 이 묶음 밖의 부품(사선 0의 빗금 등)은 부품 변환으로 함께 키운다."""
+    s = FIGURE_SCALE
     glyf, gvar, hmtx = font["glyf"], font["gvar"], font["hmtx"]
-    changed = 0
+    names = _figure_glyphs(font)
     for n in sorted(names):
         g = glyf[n]
-        if g.isComposite() or g.numberOfContours <= 0:
-            continue  # 부품 글리프는 바뀐 바탕 글리프를 따라간다
-        new = {w: _coords_at(font, n, _norm(shift[w])) for w in shift}
-        base = new[400]
-        n_pts = len(base) - 4
-        gvar.variations[n] = [
-            TupleVariation(axes, [tuple(p) for p in (new[w] - base)])
-            for w, axes in ((45, {"wght": (-1.0, -1.0, 0.0)}), (930, {"wght": (0.0, 1.0, 1.0)}))
-        ]
-        g.coordinates = GlyphCoordinates(base[:n_pts])
+        if g.isComposite():
+            for c in g.components:
+                c.x, c.y = round(c.x * s), round(c.y * s)
+                if c.glyphName not in names:
+                    t = getattr(c, "transform", [[1, 0], [0, 1]])
+                    c.transform = [[t[0][0] * s, t[0][1] * s], [t[1][0] * s, t[1][1] * s]]
+        elif g.numberOfContours > 0:
+            g.coordinates.scale((s, s))
+            g.coordinates.toInt()
+        for tv in gvar.variations.get(n, []):
+            tv.coordinates = [None if p is None else (round(p[0] * s), round(p[1] * s)) for p in tv.coordinates]
         g.recalcBounds(glyf)
-        hmtx[n] = (base[n_pts + 1][0] - base[n_pts][0], g.xMin)
-        changed += 1
-    return changed
+        adv, _ = hmtx[n]
+        hmtx[n] = (round(adv * s), getattr(g, "xMin", 0))
+    # 숫자(기호 빼고)는 옆 여백을 줄인다. 부품 숫자(고정폭 등)는 바탕 숫자가 이미 옮겨져 있어 폭만 줄인다.
+    half = FIGURE_TIGHTEN // 2
+    for n in sorted(_figure_glyphs(font, extra="")):
+        g = glyf[n]
+        if not g.isComposite() and g.numberOfContours > 0:
+            g.coordinates.translate((-half, 0))
+        elif g.isComposite() and not any(c.glyphName in names for c in g.components):
+            for c in g.components:
+                c.x -= half
+        g.recalcBounds(glyf)
+        adv, _ = hmtx[n]
+        hmtx[n] = (adv - FIGURE_TIGHTEN, getattr(g, "xMin", 0))
+    return len(names)
+
+
+def narrow_space(font):
+    cmap = font.getBestCmap()
+    for u in (0x20, 0xA0):
+        n = cmap[u]
+        font["hmtx"][n] = (SPACE_WIDTH, 0)
+        for tv in font["gvar"].variations.get(n, []):  # 폭은 굵기와 상관없이 같게
+            tv.coordinates = [None if p is None else (0, 0) for p in tv.coordinates]
+
+
+def remap_weight(font):
+    """기본 마스터를 Pretendard 380 모양으로 옮기고, avar로 CSS 굵기 → Pretendard 굵기를 WEIGHT_MAP대로 잇는다."""
+    lo, hi = WEIGHT_MAP[45], WEIGHT_MAP[930]
+    default = WEIGHT_MAP[400]
+    font = instancer.instantiateVariableFont(font, {"wght": (lo, default, hi)})
+    axis = font["fvar"].axes[0]
+    axis.minValue, axis.defaultValue, axis.maxValue = 45, 400, 930
+
+    def user(u):
+        return (u - 400) / (400 - 45) if u < 400 else (u - 400) / (930 - 400)
+
+    def inner(o):
+        return (o - default) / (default - lo) if o < default else (o - default) / (hi - default)
+
+    avar = newTable("avar")
+    avar.segments = {"wght": {round(user(u), 4): round(inner(o), 4) for u, o in sorted(WEIGHT_MAP.items())}}
+    font["avar"] = avar
+    return font
+
+
+def toss_middle_dot(font):
+    """가운뎃점(·)을 토스처럼 넓은 폭, 한글 가운데 높이로. 다른 가운뎃점 코드도 같은 글리프로."""
+    glyf, hmtx, cmap = font["glyf"], font["hmtx"], font.getBestCmap()
+    n = cmap[0xB7]
+    g = glyf[n]
+    adv, _ = hmtx[n]
+    dy = MIDDLE_DOT_CENTER - (g.yMin + g.yMax) / 2
+    dx = (MIDDLE_DOT_WIDTH - adv) / 2
+    if g.isComposite():  # periodcentered = period 부품
+        for c in g.components:
+            c.x, c.y = c.x + round(dx), c.y + round(dy)
+    else:
+        g.coordinates.translate((round(dx), round(dy)))
+    g.recalcBounds(glyf)
+    hmtx[n] = (MIDDLE_DOT_WIDTH, g.xMin)  # 폭 차이값(위상 점)은 그대로 — 굵을수록 조금 넓어진다
+    for table in font["cmap"].tables:
+        if table.isUnicode():
+            for u in MIDDLE_DOT_ALIASES:
+                table.cmap[u] = n
+
+
+def raise_hangul(font):
+    """한글 글리프를 HANGUL_RAISE만큼 올리고, 줄 상자(ascent/descent)도 같이 올려 한글이 줄 가운데 오게 한다.
+    영문은 줄 상자 안에서 그만큼 아래에 놓인다 — 토스 프로덕트 산스와 같은 관계."""
+    cmap = font.getBestCmap()
+    glyf = font["glyf"]
+    done = set()
+    for lo, hi in HANGUL_RANGES:
+        for u in range(lo, hi + 1):
+            n = cmap.get(u)
+            if not n or n in done:
+                continue
+            done.add(n)
+            g = glyf[n]
+            if g.isComposite():
+                for c in g.components:
+                    c.y += HANGUL_RAISE
+            elif g.numberOfContours > 0:
+                g.coordinates.translate((0, HANGUL_RAISE))
+            g.recalcBounds(glyf)
+    r = HANGUL_RAISE
+    hhea, os2 = font["hhea"], font["OS/2"]
+    hhea.ascent += r
+    hhea.descent += r
+    os2.sTypoAscender += r
+    os2.sTypoDescender += r
+    os2.usWinAscent += r
+    os2.usWinDescent -= r
+    return len(done)
 
 
 # ---------------------------------------------------------------- 3. 숫자 앞 빼기 기호
@@ -377,10 +469,16 @@ def main():
     var_src, subset_txt = fetch_sources()
     font = TTFont(var_src, lazy=False)  # gvar를 먼저 다 풀어야 글리프를 바꿔도 점 개수가 어긋나지 않는다
 
+    font = remap_weight(font)
+    print("굵기: " + ", ".join(f"{u}→{o}" for u, o in WEIGHT_MAP.items()))
     n = tighten_hangul(font)
     print(f"한글 {n}자 자간 -{HANGUL_TIGHTEN}유닛")
-    n = boost_latin(font)
-    print(f"숫자·영문 {n}자 굵기 +{LATIN_BOOST}")
+    n = scale_figures(font)
+    print(f"숫자·기호 {n}자 ×{FIGURE_SCALE:.3f}")
+    narrow_space(font)
+    toss_middle_dot(font)
+    raise_hangul(font)
+    print(f"띄어쓰기 {SPACE_WIDTH}, 한글 +{HANGUL_RAISE}")
     brand.add_logo_glyphs(font)
     print(f"어데닉 로고 U+{brand.WORDMARK_CP:04X}, U+{brand.MARK_CP:04X}, ss20")
     merge_features(font, EXTRA_FEA)
