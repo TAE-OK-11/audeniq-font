@@ -15,6 +15,7 @@ import tarfile
 import urllib.request
 
 from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
+from fontTools.pens.boundsPen import BoundsPen
 from fontTools.subset import Options, Subsetter
 from fontTools.ttLib import TTFont, newTable
 from fontTools.ttLib.tables import otTables
@@ -38,7 +39,7 @@ PRETENDARD_SHA1 = "b1f86d5a7a729f518974098fcf85f34fff3526b7"  # npm dist.shasum
 PRETENDARD_MEMBER = "package/dist/public/variable/PretendardVariable.ttf"
 SUBSET_MEMBER = "package/subset_glyphs.txt"
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 FAMILY = "Audeniq Sans"
 VENDOR = "AUDQ"
 
@@ -83,6 +84,11 @@ SYMBOL_SPACE = 0  # 스튜디오 필드 테스트: +30은 「+133.6%」에서 �
 # 균형: 괄호를 한글 높이에 맞게 올린다. 기본 괄호는 영문 내림선까지 내려가 '(선택)'에서 처져 보였다.
 BRACKETS = ["parenleft", "parenright", "bracketleft", "bracketright", "braceleft", "braceright"]
 BRACKET_RAISE = 110
+
+# 한글 광학 자간: 본고딕 한글은 음절 폭이 모두 같아 'ㅣ'만 있는 음절(니 디 티 비 리)은 좌우 여백이 약 380,
+# 'ㅏ'가 바깥으로 뻗은 음절(사 자 파 하)은 약 30–50이다. 각 음절의 좌우 여백을 중앙값 쪽으로 이만큼 당긴다.
+# 0.5는 '사이니지'처럼 세로획이 붙었고 0.3이 어데닉 문구(다시·리포트·아티스트님)에서 가장 고르게 보였다.
+HANGUL_OPTICAL = 0.3
 
 # 굵기 축 이름(STAT/fvar)
 WEIGHTS = [
@@ -136,6 +142,35 @@ def tighten_hangul(font):
             hmtx[name] = (adv - HANGUL_TIGHTEN, g.xMin if hasattr(g, "xMin") else 0)
             changed += 1
     return changed
+
+
+def optical_hangul(font):
+    """완성형 11,172자의 좌우 잉크 여백(세 마스터 평균)을 중앙값 쪽으로 HANGUL_OPTICAL만큼 당긴다."""
+    import statistics
+    cmap = font.getBestCmap()
+    glyf, hmtx = font["glyf"], font["hmtx"]
+    names = sorted({cmap[u] for u in range(0xAC00, 0xD7A4) if u in cmap})
+    sets = [font.getGlyphSet(location={"wght": n}, normalized=True) for n in (-1.0, 0.0, 1.0)]
+    side = {}
+    for n in names:
+        ls, rs = [], []
+        for gs in sets:
+            pen = BoundsPen(gs)
+            gs[n].draw(pen)
+            ls.append(pen.bounds[0])
+            rs.append(gs[n].width - pen.bounds[2])
+        side[n] = (sum(ls) / 3, sum(rs) / 3)
+    ml = statistics.median(v[0] for v in side.values())
+    mr = statistics.median(v[1] for v in side.values())
+    for n in names:
+        dl = round(-HANGUL_OPTICAL * (side[n][0] - ml))
+        dr = round(-HANGUL_OPTICAL * (side[n][1] - mr))
+        g = glyf[n]
+        g.coordinates.translate((dl, 0))
+        g.recalcBounds(glyf)
+        adv, _ = hmtx[n]
+        hmtx[n] = (adv + dl + dr, g.xMin)
+    return ml, mr
 
 
 # ---------------------------------------------------------------- 2. 토스·SD 고딕 Neo 비율
@@ -448,7 +483,7 @@ feature ss20 {
 
 
 def merge_features(font, fea):
-    """원래 GSUB을 덮지 않고, 임시 글꼴에서 만든 룩업을 뒤에 붙인 뒤 기능 목록에 더한다."""
+    """원래 GSUB·GPOS를 덮지 않고, 임시 글꼴에서 만든 룩업을 뒤에 붙인 뒤 기능 목록에 더한다."""
     tmp = TTFont()
     tmp.setGlyphOrder(font.getGlyphOrder())
     tmp["name"] = newTable("name")
@@ -462,16 +497,21 @@ def merge_features(font, fea):
             remap[n.nameID] = next_id
             next_id += 1
         font["name"].setName(n.toUnicode(), remap[n.nameID], n.platformID, n.platEncID, n.langID)
-    src = tmp["GSUB"].table
-    dst = font["GSUB"].table
+    for tag in ("GSUB", "GPOS"):
+        if tag in tmp:
+            _merge_table(font[tag].table, tmp[tag].table, remap)
+
+
+def _merge_table(dst, src, remap):
     base = len(dst.LookupList.Lookup)
     dst.LookupList.Lookup.extend(src.LookupList.Lookup)
     dst.LookupList.LookupCount = len(dst.LookupList.Lookup)
     # 체인 룩업 안의 룩업 번호도 옮긴다.
     for lk in src.LookupList.Lookup:
         for st in lk.SubTable:
-            for rec in getattr(st, "SubstLookupRecord", []) or []:
-                rec.LookupListIndex += base
+            for attr in ("SubstLookupRecord", "PosLookupRecord"):
+                for rec in getattr(st, attr, []) or []:
+                    rec.LookupListIndex += base
             for rs in getattr(st, "ChainSubRuleSet", []) or []:
                 for r in rs.ChainSubRule:
                     for rec in r.SubstLookupRecord:
@@ -624,6 +664,8 @@ def main():
     print("굵기: " + ", ".join(f"{u}→{o}" for u, o in WEIGHT_MAP.items()))
     n = tighten_hangul(font)
     print(f"한글 {n}자 자간 -{HANGUL_TIGHTEN}유닛")
+    ml, mr = optical_hangul(font)
+    print(f"한글 광학 자간 ×{HANGUL_OPTICAL} (여백 중앙값 왼쪽 {ml:.0f}, 오른쪽 {mr:.0f})")
     lighten_figures(font)
     n = scale_figures(font)
     print(f"숫자·기호 {n}자 ×{FIGURE_SCALE:.3f}")

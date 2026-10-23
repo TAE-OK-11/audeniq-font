@@ -47,10 +47,36 @@ for path in [VAR] + sorted(glob.glob(os.path.join(ROOT, "fonts", "static", "*.tt
 check(f["name"].getDebugName(1) == "Audeniq Sans Variable", "가변 글꼴 패밀리 이름")
 check(f["OS/2"].achVendID == "AUDQ", "제작사 코드 AUDQ")
 
-# 한글 자간: 완성형 11,172자 모두 원본보다 40유닛 좁다. 라틴·숫자는 그대로.
-hangul = [u for u in range(0xAC00, 0xD7A4)]
-diff = {src["hmtx"][src.getBestCmap()[u]][0] - f["hmtx"][cmap[u]][0] for u in hangul}
-check(diff == {40}, f"한글 11,172자 폭 -40유닛 (차이 {sorted(diff)})")
+# 한글 자간: 완성형 11,172자 — 폭 중앙값은 원본보다 40 좁고(−0.02em), 좌우 여백의 들쭉날쭉함은 HANGUL_OPTICAL만큼 줄었다.
+import statistics  # noqa: E402
+
+_sp = src.getBestCmap()
+hangul = range(0xAC00, 0xD7A4)
+widths = [f["hmtx"][cmap[u]][0] for u in hangul]
+check(abs(statistics.median(widths) - (src["hmtx"][_sp[0xAC00]][0] - 40)) <= 10, f"한글 폭 중앙값 {statistics.median(widths)} (원본 1770 − 40 언저리)")
+
+
+def gaps(font, cm):
+    gs = font.getGlyphSet(location={"wght": 0.0}, normalized=True)
+    out = []
+    for u in range(0xAC00, 0xD7A4, 7):  # 1,596자 표본
+        pen = BoundsPen(gs)
+        gs[cm[u]].draw(pen)
+        out.append(pen.bounds[0] + gs[cm[u]].width - pen.bounds[2])
+    return out
+
+
+g_new, g_old = gaps(f, cmap), gaps(src, _sp)
+ratio = statistics.pstdev(g_new) / statistics.pstdev(g_old)
+check(abs(ratio - 0.7) < 0.05, f"한글 좌우 여백 흩어짐 {ratio:.2f}배(광학 자간 0.3)")
+gn = {}
+for c in "니사":
+    gs = f.getGlyphSet(location={"wght": 0.0}, normalized=True)
+    pen = BoundsPen(gs)
+    gs[cmap[ord(c)]].draw(pen)
+    gn[c] = pen.bounds[0] + gs[cmap[ord(c)]].width - pen.bounds[2]
+check(gn["니"] - gn["사"] < 260, f"'니'와 '사'의 여백 차이 {gn['니'] - gn['사']:.0f} (원본 약 350)")
+
 # 값은 build/build.py의 상수 하나에서 온다(DESIGN.md 표와 같은 값).
 sys.path.insert(0, os.path.join(ROOT, "build"))
 import build as B  # noqa: E402
@@ -75,7 +101,6 @@ for user in (100, 400, 700, 930):
 # 한글: 양쪽 20씩 좁히고 HANGUL_RAISE만큼 위로.
 for user in (100, 400, 900):
     a, b = ink(f, "uniAC00", user), ink(src, "uniAC00", orig_weight(user))
-    check(abs(b[0] - a[0] - 20) <= 1 and abs(b[2] - a[2] - 20) <= 1, f"'가' 굵기 {user}: 잉크가 20 왼쪽으로(양쪽 20씩)")
     check(abs(a[1] - b[1] - B.HANGUL_RAISE) <= 1, f"'가' 굵기 {user}: {B.HANGUL_RAISE} 위로")
 
 # 숫자: FIGURE_SCALE배, 옆 여백은 FIGURE_TIGHTEN만큼 덜어 낸다. 기호(% ₩)는 키우기만.
@@ -212,6 +237,22 @@ check(all(len(v) <= 2 for v in f["gvar"].variations.values()), "모든 글리프
 colr = f["COLR"].table
 check(colr.BaseGlyphRecordCount == 2 and {r.BaseGlyph for r in colr.BaseGlyphRecordArray.BaseGlyphRecord} == {"aq.wordmark", "aq.mark"},
       "COLRv0 층(사파리): 워드마크·심볼")
+
+# 한글 뒤 문장부호 커닝: '요.'의 '요'는 '요요'의 '요'보다 좁게 놓이고, 영문 'a.'는 그대로.
+def adv0(text, feats=None):
+    fnt = hb.Font(hb.Face(hb.Blob.from_file_path(VAR)))
+    buf = hb.Buffer()
+    buf.add_str(text)
+    buf.guess_segment_properties()
+    hb.shape(fnt, buf, feats or {})
+    return buf.glyph_positions[0].x_advance
+
+
+for punct in (".", "!", "(", "…"):
+    k = adv0("요" + punct) - adv0("요요")
+    check(-100 < k < -50, f"'요{punct}' 커닝 {k}")
+check(adv0("a.") == adv0("aa"), "영문 'a.'은 커닝 없음")
+check(adv0("요.", {"kern": False}) == adv0("요요"), "kern을 끄면 커닝 없음")
 
 # 어데닉 로고: U+F8F0 워드마크, U+F8F1 A 심볼, ss20을 켤 때만 'AUDENIQ' → 워드마크.
 check(cmap.get(0xF8F0) == "aq.wordmark" and cmap.get(0xF8F1) == "aq.mark", "로고 글자 U+F8F0·U+F8F1")

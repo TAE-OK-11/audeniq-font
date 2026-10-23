@@ -128,8 +128,37 @@ def add_detail_glyphs(font):
     _composite(font, "uni2117", [(src, dx, dy, (k, k))], hmtx["copyright"][0])
 
 
+HANGUL_PUNCT = ("period", "exclam", "ellipsis.hang")  # 한글 뒤에서 한글 사이 간격만큼으로 당길 문장부호
+HANGUL_BRACKET_KERN_SHARE = 0.5  # 여는 괄호는 곡선이라 같은 셈의 절반만
+
+
+def _hangul_kerns(font):
+    """한글 뒤 문장부호 커닝 = (한글 사이 간격 중앙값) − (한글 오른쪽 여백 중앙값 + 부호 왼쪽 여백)."""
+    import statistics
+    cmap = font.getBestCmap()
+    gs = font.getGlyphSet(location={"wght": 0.0}, normalized=True)
+    ls, rs = [], []
+    for u in range(0xAC00, 0xD7A4, 5):
+        pen = BoundsPen(gs)
+        gs[cmap[u]].draw(pen)
+        ls.append(pen.bounds[0])
+        rs.append(gs[cmap[u]].width - pen.bounds[2])
+    gap, rsb = statistics.median(ls) + statistics.median(rs), statistics.median(rs)
+    out = {}
+    for name in HANGUL_PUNCT + ("parenleft", "bracketleft"):
+        pen = BoundsPen(gs)
+        gs[name].draw(pen)
+        k = gap - (rsb + pen.bounds[0])
+        if name.endswith("left"):
+            k *= HANGUL_BRACKET_KERN_SHARE
+        out[name] = min(0, round(k))
+    return out
+
+
 def detail_fea(font):
     cmap = font.getBestCmap()
+    kerns = _hangul_kerns(font)
+    kern_rules = "\n".join(f"    pos @AQ_HANGUL {g} {v};" for g, v in kerns.items() if v)
     hangul = " ".join(sorted({cmap[u] for u in range(0xAC00, 0xD7A4) if u in cmap}))
     return f"""
 @AQ_HANGUL = [{hangul}];
@@ -165,6 +194,16 @@ lookup AQ_TNUM_SIGNS {{
 feature tnum {{
     lookup AQ_TNUM_SIGNS;
 }} tnum;
+
+# 한글 뒤 '. ! …'와 여는 괄호: 영문 기준 여백이라 '주세요.'의 마침표가 떠 보였다.
+# 한글 사이 간격만큼으로 당긴다(kern은 브라우저 기본으로 켜져 있다).
+lookup AQ_HANGUL_KERN {{
+{kern_rules}
+}} AQ_HANGUL_KERN;
+
+feature kern {{
+    lookup AQ_HANGUL_KERN;
+}} kern;
 
 feature rclt {{
     lookup AQ_DETAILS;
