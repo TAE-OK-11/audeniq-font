@@ -71,7 +71,7 @@ HANGUL_RAISE = 16
 # (토스 Regular ≈ Pretendard 380, 토스 Bold ≈ 610)
 WEIGHT_MAP = {45: 45, 100: 100, 400: 390, 700: 650, 930: 930}
 # 맥락: 가운뎃점은 마침표와 헷갈리지 않게 넓게, 한글 가운데 높이로. (폭 520 → 1031, 높이 633 → 735)
-MIDDLE_DOT_WIDTH = 800
+MIDDLE_DOT_WIDTH = 640  # 스튜디오 필드 테스트: 800은 제목 「정산·지급」이 띄어 쓴 것처럼 보였다
 MIDDLE_DOT_CENTER = 745
 MIDDLE_DOT_ALIASES = (0x2027, 0x30FB)  # 같은 모양으로 맞출 다른 가운뎃점(중앙점 통일)
 # 균형·맥락: + − × ÷ = < > ± ~ 와 화살표를 소문자 가운데(567)에서 숫자·한글 가운데로.
@@ -79,7 +79,7 @@ SYMBOL_CENTER = 745
 SYMBOLS = ["plus", "minus", "multiply", "divide", "equal", "less", "greater", "plusminus", "asciitilde",
            "arrowright", "arrowleft", "plus.case", "minus.case", "multiply.case", "divide.case", "equal.case",
            "less.case", "greater.case", "plusminus.case", "asciitilde.case", "arrowright.case", "arrowleft.case"]
-SYMBOL_SPACE = 30  # 맥락: 기호 양옆 여백을 조금 더 — 아이콘처럼 한눈에
+SYMBOL_SPACE = 0  # 스튜디오 필드 테스트: +30은 「+133.6%」에서 부호와 숫자 사이가 떠 보였다
 # 균형: 괄호를 한글 높이에 맞게 올린다. 기본 괄호는 영문 내림선까지 내려가 '(선택)'에서 처져 보였다.
 BRACKETS = ["parenleft", "parenright", "bracketleft", "bracketright", "braceleft", "braceright"]
 BRACKET_RAISE = 110
