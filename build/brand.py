@@ -4,7 +4,7 @@
   워드마크: web/studio/app/public/static/AUDENIQ_Logo_Light.svg
   A 심볼:   web/studio/app/public/static/favicon.svg
 색이 있는 부분(Q 꼬리 그라데이션, A 가로획 파랑)은 COLRv1 층으로 남기고, 나머지는 글자 색을 따른다.
-COLR을 못 읽는 곳(사파리 등)은 한 색 로고로 보인다.
+COLRv1을 못 읽는 사파리는 COLRv0 층으로 본체는 글자 색, 꼬리·가로획은 파랑(한 색)으로 보인다.
 """
 from fontTools.colorLib.builder import buildCOLR, buildCPAL
 from fontTools.misc.transform import Transform
@@ -142,8 +142,31 @@ def add_logo_glyphs(font):
         return {"Format": ot.PaintFormat.PaintColrLayers,
                 "Layers": [{"Format": ot.PaintFormat.PaintGlyph, "Glyph": g, "Paint": p} for g, p in pairs]}
 
-    font["COLR"] = buildCOLR({
+    glyph_map = font.getReverseGlyphMap(rebuild=True)
+    colr = buildCOLR({
         "aq.wordmark": layers(("aq.wordmark.body", fg), ("aq.wordmark.tail", gradient)),
         "aq.mark": layers(("aq.mark.body", fg), ("aq.mark.bar", bar)),
-    }, version=1, glyphMap=font.getReverseGlyphMap(rebuild=True))
+    }, version=1, glyphMap=glyph_map)
+    # 사파리는 COLRv1(그라데이션)을 못 읽는다. 같은 글리프에 COLRv0 층(한 색)을 함께 넣으면
+    # v1을 읽는 브라우저는 v1을, 사파리는 v0을 쓴다. 꼬리는 그라데이션 가운데 색(#4286F4).
+    v0 = {
+        "aq.wordmark": [("aq.wordmark.body", 0xFFFF), ("aq.wordmark.tail", 1)],
+        "aq.mark": [("aq.mark.body", 0xFFFF), ("aq.mark.bar", 3)],
+    }
+    t = colr.table
+    bases, lays = [], []
+    for base in sorted(v0, key=glyph_map.get):  # 글리프 번호 순
+        rec = ot.BaseGlyphRecord()
+        rec.BaseGlyph, rec.FirstLayerIndex, rec.NumLayers = base, len(lays), len(v0[base])
+        bases.append(rec)
+        for glyph, index in v0[base]:
+            lay = ot.LayerRecord()
+            lay.LayerGlyph, lay.PaletteIndex = glyph, index
+            lays.append(lay)
+    t.BaseGlyphRecordArray = ot.BaseGlyphRecordArray()
+    t.BaseGlyphRecordArray.BaseGlyphRecord = bases
+    t.LayerRecordArray = ot.LayerRecordArray()
+    t.LayerRecordArray.LayerRecord = lays
+    t.BaseGlyphRecordCount, t.LayerRecordCount = len(bases), len(lays)
+    font["COLR"] = colr
     return ["aq.wordmark", "aq.mark"]

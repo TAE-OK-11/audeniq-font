@@ -18,7 +18,7 @@ from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
 from fontTools.subset import Options, Subsetter
 from fontTools.ttLib import TTFont, newTable
 from fontTools.ttLib.tables import otTables
-from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
+from fontTools.ttLib.tables._g_l_y_f import Glyph, GlyphComponent, GlyphCoordinates
 from fontTools.ttLib.tables.TupleVariation import TupleVariation
 from fontTools.varLib.iup import iup_delta
 from fontTools.varLib.models import supportScalar
@@ -38,7 +38,7 @@ PRETENDARD_SHA1 = "b1f86d5a7a729f518974098fcf85f34fff3526b7"  # npm dist.shasum
 PRETENDARD_MEMBER = "package/dist/public/variable/PretendardVariable.ttf"
 SUBSET_MEMBER = "package/subset_glyphs.txt"
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 FAMILY = "Audeniq Sans"
 VENDOR = "AUDQ"
 
@@ -206,22 +206,33 @@ def narrow_space(font):
             tv.coordinates = [None if p is None else (0, 0) for p in tv.coordinates]
 
 
+MASTERS = (45, 400, 930)  # Pretendard 가변 글꼴의 굵기 마스터. 기본 모양은 400 그대로 둔다
+
+
 def remap_weight(font):
-    """기본 마스터를 Pretendard 380 모양으로 옮기고, avar로 CSS 굵기 → Pretendard 굵기를 WEIGHT_MAP대로 잇는다."""
-    lo, hi = WEIGHT_MAP[45], WEIGHT_MAP[930]
-    default = WEIGHT_MAP[400]
-    font = instancer.instantiateVariableFont(font, {"wght": (lo, default, hi)})
+    """CSS 굵기 → Pretendard 굵기를 WEIGHT_MAP대로 avar로 잇는다. 외곽선은 건드리지 않는다.
+    avar는 기본값(0)을 옮길 수 없어서, fvar 기본값을 'Pretendard 400 모양이 되는 CSS 굵기'로 둔다.
+    (0.3–0.4는 기본 모양을 380·390으로 옮겼는데, 그때 마스터가 하나 늘어 gvar가 3.4MB → 4.8MB가 됐다)"""
+    lo, mid, hi = MASTERS
+    pts = sorted(WEIGHT_MAP.items())
+    # Pretendard 400이 되는 CSS 굵기(WEIGHT_MAP 사이 직선)
+    for (u0, o0), (u1, o1) in zip(pts, pts[1:]):
+        if o0 <= mid <= o1:
+            default = u0 + (u1 - u0) * (mid - o0) / (o1 - o0)
+            break
     axis = font["fvar"].axes[0]
-    axis.minValue, axis.defaultValue, axis.maxValue = 45, 400, 930
+    axis.minValue, axis.defaultValue, axis.maxValue = lo, round(default, 2), hi
 
     def user(u):
-        return (u - 400) / (400 - 45) if u < 400 else (u - 400) / (930 - 400)
+        return (u - default) / (default - lo) if u < default else (u - default) / (hi - default)
 
     def inner(o):
-        return (o - default) / (default - lo) if o < default else (o - default) / (hi - default)
+        return (o - mid) / (mid - lo) if o < mid else (o - mid) / (hi - mid)
 
+    seg = {round(user(u), 4): round(inner(o), 4) for u, o in pts}
+    seg[0.0] = 0.0
     avar = newTable("avar")
-    avar.segments = {"wght": {round(user(u), 4): round(inner(o), 4) for u, o in sorted(WEIGHT_MAP.items())}}
+    avar.segments = {"wght": dict(sorted(seg.items()))}
     font["avar"] = avar
     return font
 
@@ -248,8 +259,8 @@ def wide_middle_dot(font):
 
 
 def _internal_norm(font, o):
-    """remap_weight 뒤 내부 굵기 o(Pretendard 굵기)의 정규화 좌표."""
-    lo, d, hi = WEIGHT_MAP[45], WEIGHT_MAP[400], WEIGHT_MAP[930]
+    """Pretendard 굵기 o의 정규화 좌표(마스터 45 · 400 · 930 기준)."""
+    lo, d, hi = MASTERS
     return {"wght": (o - d) / (d - lo) if o < d else (o - d) / (hi - d)}
 
 
@@ -274,7 +285,7 @@ def lighten_figures(font):
     """FIGURE_LIGHTEN: 진해 보이는 숫자의 외곽선을 같은 숫자의 조금 가는 굵기 모양으로 바꾼다.
     가장 가는 끝(45)은 더 가늘게 할 수 없어 그대로, 나머지 마스터는 k만큼 가는 위치의 모양."""
     glyf, gvar, hmtx = font["glyf"], font["gvar"], font["hmtx"]
-    lo, d, hi = WEIGHT_MAP[45], WEIGHT_MAP[400], WEIGHT_MAP[930]
+    lo, d, hi = MASTERS
     for n, k in FIGURE_LIGHTEN.items():
         g = glyf[n]
         if g.isComposite() or g.numberOfContours <= 0:
@@ -333,6 +344,37 @@ def raise_brackets(font):
     for n in BRACKETS:
         _shift(font, n, 0, BRACKET_RAISE)
         font["hmtx"][n] = (font["hmtx"][n][0], font["glyf"][n].xMin)
+
+
+def tabular_signs(font):
+    """aq.minus.tf · aq.plus.tf: minus.case/plus.case를 고정폭 숫자(uniE071) 폭 가운데에. 굵기마다 그 폭을 따른다."""
+    glyf, hmtx, gvar = font["glyf"], font["hmtx"], font["gvar"]
+    lo, mid, hi = MASTERS
+    order = font.getGlyphOrder()
+
+    def adv(name, o):
+        c = _coords_at(font, name, _internal_norm(font, o))
+        return c[-3][0] - c[-4][0]
+
+    for sign, new in (("minus.case", "aq.minus.tf"), ("plus.case", "aq.plus.tf")):
+        lay = {o: (adv("uniE071", o), adv(sign, o)) for o in MASTERS}
+        dx = {o: round((w_tf - w_s) / 2) for o, (w_tf, w_s) in lay.items()}
+        g = Glyph()
+        g.numberOfContours = -1
+        c = GlyphComponent()
+        c.glyphName, c.x, c.y, c.flags = sign, dx[mid], 0, 0x0004
+        g.components = [c]
+        glyf[new] = g
+        if new not in order:
+            order.append(new)
+        g.recalcBounds(glyf)
+        hmtx[new] = (lay[mid][0], g.xMin)
+        gvar.variations[new] = [
+            TupleVariation(axes, [(dx[o] - dx[mid], 0), (0, 0), (lay[o][0] - lay[mid][0], 0), (0, 0), (0, 0)])
+            for o, axes in ((lo, {"wght": (-1.0, -1.0, 0.0)}), (hi, {"wght": (0.0, 1.0, 1.0)}))
+        ]
+    font.setGlyphOrder(order)
+    glyf.glyphOrder = order
 
 
 def raise_hangul(font):
@@ -578,7 +620,7 @@ def main():
     var_src, subset_txt = fetch_sources()
     font = TTFont(var_src, lazy=False)  # gvar를 먼저 다 풀어야 글리프를 바꿔도 점 개수가 어긋나지 않는다
 
-    font = remap_weight(font)
+    remap_weight(font)
     print("굵기: " + ", ".join(f"{u}→{o}" for u, o in WEIGHT_MAP.items()))
     n = tighten_hangul(font)
     print(f"한글 {n}자 자간 -{HANGUL_TIGHTEN}유닛")
@@ -588,6 +630,7 @@ def main():
     narrow_space(font)
     wide_middle_dot(font)
     n_sym = center_symbols(font)
+    tabular_signs(font)
     raise_brackets(font)
     raise_hangul(font)
     print(f"기호 {n_sym}자 가운데 {SYMBOL_CENTER}, 괄호 +{BRACKET_RAISE}, 6·8·9·5 가볍게")

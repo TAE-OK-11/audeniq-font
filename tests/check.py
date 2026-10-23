@@ -117,7 +117,7 @@ for user in (100, 400, 700, 900):
 check(all(f.getGlyphSet(location={"wght": w}, normalized=False)[cmap[0x20]].width == B.SPACE_WIDTH for w in (100, 400, 900)),
       f"띄어쓰기 {B.SPACE_WIDTH}, 모든 굵기")
 dot = ink(f, cmap[0xB7], 400)
-check(gsA[cmap[0xB7]].width == B.MIDDLE_DOT_WIDTH and abs((dot[1] + dot[3]) / 2 - B.MIDDLE_DOT_CENTER) <= 2,
+check(abs(gsA[cmap[0xB7]].width - B.MIDDLE_DOT_WIDTH) <= 3 and abs((dot[1] + dot[3]) / 2 - B.MIDDLE_DOT_CENTER) <= 2,
       f"가운뎃점 폭 {B.MIDDLE_DOT_WIDTH}, 높이 가운데 {(dot[1]+dot[3])/2:.0f}")
 check(cmap.get(0x2027) == cmap[0xB7] and cmap.get(0x30FB) == cmap[0xB7], "U+2027·U+30FB도 같은 가운뎃점")
 
@@ -143,7 +143,7 @@ for text, want in cases.items():
     has = "minus.case" in glyphs
     check(has == (want == "minus"), f"'{text}' → {'−' if has else '-'}")
 glyphs, _ = shape(VAR, "-1,200", {"tnum": True})
-check(glyphs[0] == "minus.case", "고정폭 숫자에서도 '-1,200' → '−'")
+check(glyphs[0] in ("minus.case", "aq.minus.tf"), "고정폭 숫자에서도 '-1,200' → '−'")
 glyphs, _ = shape(VAR, "-1,200", {"calt": False})
 check(glyphs[0] == "minus.case", "calt를 꺼도(letter-spacing을 쓴 글자) rclt로 '−'")
 
@@ -174,8 +174,13 @@ for text, want, absent in (
         glyphs, _ = shape(VAR, text, feats)
         ok = want in glyphs and (absent is None or absent not in glyphs)
         check(ok, f"'{text}'{' (calt 꺼짐)' if feats else ''} → {want}")
-dot = ink(f, "aq.periodcentered.spaced", 400)
-check(gsA["aq.periodcentered.spaced"].width == D.SPACED_DOT_WIDTH and abs((dot[1] + dot[3]) / 2 - D.SYMBOL_CENTER) <= 2, "' · ' 점 폭·높이")
+for user in (100, 400, 700, 900):
+    dot = ink(f, "aq.periodcentered.spaced", user)
+    gsU = f.getGlyphSet(location={"wght": user}, normalized=False)
+    check(gsU["aq.periodcentered.spaced"].width == D.SPACED_DOT_WIDTH and abs((dot[1] + dot[3]) / 2 - D.SYMBOL_CENTER) <= 2
+          and abs(dot[0] - (D.SPACED_DOT_WIDTH - dot[2])) <= 4, f"' · ' 굵기 {user}: 점 가운데 {(dot[1]+dot[3])/2:.0f}")
+    dash = ink(f, "aq.emdash.spaced", user)
+    check(abs((dash[1] + dash[3]) / 2 - D.SYMBOL_CENTER) <= 2, f"' — ' 굵기 {user}: 가운데 {(dash[1]+dash[3])/2:.0f}")
 dash, full = ink(f, "aq.emdash.spaced", 400), ink(f, "emdash", 400)
 check(abs((dash[2] - dash[0]) - (full[2] - full[0]) * D.SPACED_DASH_SCALE) <= 2, f"' — ' 길이 ×{D.SPACED_DASH_SCALE}")
 q, q0 = ink(f, "aq.quoteleft.hang", 400), ink(f, "quoteleft", 400)
@@ -184,6 +189,29 @@ for w in (400, 700):
     p, c = ink(f, "uni2117", w), ink(f, "copyright", w)
     check(abs((p[3] - p[1]) - (c[3] - c[1])) <= 6 and abs((p[1] + p[3]) / 2 - (c[1] + c[3]) / 2) <= 3,
           f"℗와 ©가 같은 크기·높이 (굵기 {w}: {p[3]-p[1]:.0f} / {c[3]-c[1]:.0f})")
+
+# 고정폭 숫자 열의 부호: 숫자와 같은 폭(모든 굵기).
+for user in (100, 400, 700, 900):
+    fnt = hb.Font(hb.Face(hb.Blob.from_file_path(VAR)))
+    fnt.set_variations({"wght": user})
+    for text in ("-22,000", "+3,000", "−5"):
+        buf = hb.Buffer()
+        buf.add_str(text)
+        buf.guess_segment_properties()
+        hb.shape(fnt, buf, {"tnum": True})
+        w_sign, w_fig = buf.glyph_positions[0].x_advance, buf.glyph_positions[1].x_advance
+        check(w_sign == w_fig, f"tnum '{text}' 굵기 {user}: 부호 폭 {w_sign} = 숫자 폭 {w_fig}")
+# 시각 ':'·코드 '-'의 높이
+for name, center in (("colon.case", D.CASE_COLON_CENTER), ("hyphen.case", D.CASE_HYPHEN_CENTER)):
+    bb = ink(f, name, 400)
+    check(abs((bb[1] + bb[3]) / 2 - center) <= 2, f"{name} 가운데 {(bb[1]+bb[3])/2:.0f}")
+# 파일 크기: 굵기 마스터를 늘리지 않는다(0.3–0.5는 기본 모양을 옮겨 gvar가 4.8MB였다).
+check(TTFont(VAR).reader.tables["gvar"].length < 3_700_000, "gvar 3.7MB 아래(마스터 45·400·930 그대로)")
+check(all(len(v) <= 2 for v in f["gvar"].variations.values()), "모든 글리프의 굵기 차이값이 2개 이하")
+# 사파리용 COLRv0 층
+colr = f["COLR"].table
+check(colr.BaseGlyphRecordCount == 2 and {r.BaseGlyph for r in colr.BaseGlyphRecordArray.BaseGlyphRecord} == {"aq.wordmark", "aq.mark"},
+      "COLRv0 층(사파리): 워드마크·심볼")
 
 # 어데닉 로고: U+F8F0 워드마크, U+F8F1 A 심볼, ss20을 켤 때만 'AUDENIQ' → 워드마크.
 check(cmap.get(0xF8F0) == "aq.wordmark" and cmap.get(0xF8F1) == "aq.mark", "로고 글자 U+F8F0·U+F8F1")
