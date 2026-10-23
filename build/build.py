@@ -18,6 +18,10 @@ from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
 from fontTools.subset import Options, Subsetter
 from fontTools.ttLib import TTFont, newTable
 from fontTools.ttLib.tables import otTables
+from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
+from fontTools.ttLib.tables.TupleVariation import TupleVariation
+from fontTools.varLib.iup import iup_delta
+from fontTools.varLib.models import supportScalar
 from fontTools.varLib import instancer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -33,7 +37,7 @@ PRETENDARD_SHA1 = "b1f86d5a7a729f518974098fcf85f34fff3526b7"  # npm dist.shasum
 PRETENDARD_MEMBER = "package/dist/public/variable/PretendardVariable.ttf"
 SUBSET_MEMBER = "package/subset_glyphs.txt"
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 FAMILY = "Audeniq Sans"
 VENDOR = "AUDQ"
 
@@ -48,20 +52,36 @@ HANGUL_RANGES = [
     (0xD7B0, 0xD7FF),  # 자모 확장 B
 ]
 
-# 토스 프로덕트 산스·Apple SD 산돌고딕 Neo 비율 (DESIGN.md '잰 값' 표). 2048 UPM.
-FIGURE_SCALE = 1522 / 1468  # 숫자 높이: Pretendard 1468 → 토스 1522. 숫자가 대문자(1448)보다 커진다
+# 토스 제작기의 원칙(균형·맥락·형태)을 어데닉 화면에서 보고 정한 값. 토스 수치를 그대로 쓰지는 않는다.
+# 2048 UPM. 괄호 안은 (Pretendard → 토스) 잰 값.
+# 균형: 숫자를 조금 크게 — 금액이 문장보다 먼저 읽히게. (1468 → 1522)
+FIGURE_SCALE = 1.025
 FIGURE_EXTRA = "%₩$€¥£"  # 숫자와 같이 커지는 기호
-FIGURE_TIGHTEN = 30  # 숫자 폭을 양옆 15씩 줄인다: 토스 숫자 옆 여백 94 vs 키운 Pretendard 108
 FIGURE_FEATURES = {"tnum", "pnum", "zero", "cv01", "cv02", "cv03", "cv04", "cv09", "cv13",
                    "ss01", "ss02", "ss06", "ss08"}  # 이 기능들이 부르는 숫자 대체 글리프도 함께
-SPACE_WIDTH = 414  # 띄어쓰기: Pretendard 514(0.25em) → 토스 414(0.20em)
-HANGUL_RAISE = 16  # 한글을 영문 기준선보다 조금 위로(토스·SD 고딕 Neo). 줄 상자도 같이 올려 한글이 가운데
-# 굵기 다시 맞추기: 토스 Regular·Bold와 획 굵기가 같은 Pretendard 굵기(잰 값: l·ㅣ·ㅡ 획).
-# CSS 굵기 → Pretendard 굵기. 양 끝(45, 930)은 그대로라 가장 가늘고 가장 굵은 모양은 같다.
-WEIGHT_MAP = {45: 45, 100: 100, 400: 380, 700: 610, 930: 930}
-MIDDLE_DOT_WIDTH = 1031  # 가운뎃점 폭: Pretendard 520 → 토스 1031(약 0.5em)
-MIDDLE_DOT_CENTER = 740  # 가운뎃점 높이: 영문 x높이 가운데(633) → 한글 가운데
-MIDDLE_DOT_ALIASES = (0x2027, 0x30FB)  # 같은 모양으로 맞출 다른 가운뎃점(토스의 '중앙점 통일')
+FIGURE_TIGHTEN = 20  # 커진 만큼 숫자 옆 여백을 양쪽 10씩 덜어 금액이 흩어지지 않게. (여백 104 → 94)
+# 형태: 6·8·9·5는 같은 굵기여도 0·2·3보다 진해 보인다(잉크 밀도 0.42–0.44 vs 0.36–0.38). 그만큼 가볍게.
+FIGURE_LIGHTEN = {"eight": 16, "six": 12, "nine": 12, "five": 6, "uniE06F": 12, "uniE070": 12}
+# 균형: 띄어쓰기. 한글 자간을 좁힌 만큼 띄어쓰기도 조금 좁게. (514 → 414)
+SPACE_WIDTH = 460
+# 균형: 한글을 영문 기준선보다 조금 위로(SD 고딕 Neo). 줄 상자도 같이 올려 한글이 줄 가운데.
+HANGUL_RAISE = 16
+# 굵기: Pretendard보다 조금 가볍고 시원하게. CSS 굵기 → Pretendard 굵기. 양 끝(45, 930)은 그대로.
+# (토스 Regular ≈ Pretendard 380, 토스 Bold ≈ 610)
+WEIGHT_MAP = {45: 45, 100: 100, 400: 390, 700: 650, 930: 930}
+# 맥락: 가운뎃점은 마침표와 헷갈리지 않게 넓게, 한글 가운데 높이로. (폭 520 → 1031, 높이 633 → 735)
+MIDDLE_DOT_WIDTH = 800
+MIDDLE_DOT_CENTER = 745
+MIDDLE_DOT_ALIASES = (0x2027, 0x30FB)  # 같은 모양으로 맞출 다른 가운뎃점(중앙점 통일)
+# 균형·맥락: + − × ÷ = < > ± ~ 와 화살표를 소문자 가운데(567)에서 숫자·한글 가운데로.
+SYMBOL_CENTER = 745
+SYMBOLS = ["plus", "minus", "multiply", "divide", "equal", "less", "greater", "plusminus", "asciitilde",
+           "arrowright", "arrowleft", "plus.case", "minus.case", "multiply.case", "divide.case", "equal.case",
+           "less.case", "greater.case", "plusminus.case", "asciitilde.case", "arrowright.case", "arrowleft.case"]
+SYMBOL_SPACE = 30  # 맥락: 기호 양옆 여백을 조금 더 — 아이콘처럼 한눈에
+# 균형: 괄호를 한글 높이에 맞게 올린다. 기본 괄호는 영문 내림선까지 내려가 '(선택)'에서 처져 보였다.
+BRACKETS = ["parenleft", "parenright", "bracketleft", "bracketright", "braceleft", "braceright"]
+BRACKET_RAISE = 110
 
 # 굵기 축 이름(STAT/fvar)
 WEIGHTS = [
@@ -205,8 +225,8 @@ def remap_weight(font):
     return font
 
 
-def toss_middle_dot(font):
-    """가운뎃점(·)을 토스처럼 넓은 폭, 한글 가운데 높이로. 다른 가운뎃점 코드도 같은 글리프로."""
+def wide_middle_dot(font):
+    """가운뎃점(·)을 넓은 폭, 한글 가운데 높이로. 다른 가운뎃점 코드도 같은 글리프로."""
     glyf, hmtx, cmap = font["glyf"], font["hmtx"], font.getBestCmap()
     n = cmap[0xB7]
     g = glyf[n]
@@ -224,6 +244,94 @@ def toss_middle_dot(font):
         if table.isUnicode():
             for u in MIDDLE_DOT_ALIASES:
                 table.cmap[u] = n
+
+
+def _internal_norm(font, o):
+    """remap_weight 뒤 내부 굵기 o(Pretendard 굵기)의 정규화 좌표."""
+    lo, d, hi = WEIGHT_MAP[45], WEIGHT_MAP[400], WEIGHT_MAP[930]
+    return {"wght": (o - d) / (d - lo) if o < d else (o - d) / (hi - d)}
+
+
+def _coords_at(font, name, loc):
+    """정규화 위치 loc에서 글리프 점 좌표(위상 점 4개 포함)."""
+    glyf, gvar = font["glyf"], font["gvar"]
+    coords, ctrl = glyf._getCoordinatesAndControls(name, font["hmtx"].metrics, None)
+    out = GlyphCoordinates(coords)
+    for tv in gvar.variations.get(name, []):
+        scalar = supportScalar(loc, tv.axes)
+        if not scalar:
+            continue
+        deltas = tv.coordinates
+        if None in deltas:
+            deltas = iup_delta(deltas, coords, ctrl.endPts)
+        out += GlyphCoordinates(deltas) * scalar
+    out.toInt()
+    return out
+
+
+def lighten_figures(font):
+    """FIGURE_LIGHTEN: 진해 보이는 숫자의 외곽선을 같은 숫자의 조금 가는 굵기 모양으로 바꾼다.
+    가장 가는 끝(45)은 더 가늘게 할 수 없어 그대로, 나머지 마스터는 k만큼 가는 위치의 모양."""
+    glyf, gvar, hmtx = font["glyf"], font["gvar"], font["hmtx"]
+    lo, d, hi = WEIGHT_MAP[45], WEIGHT_MAP[400], WEIGHT_MAP[930]
+    for n, k in FIGURE_LIGHTEN.items():
+        g = glyf[n]
+        if g.isComposite() or g.numberOfContours <= 0:
+            continue
+        masters = ((lo, lo), (d, d - k), (hi, hi - k))
+        shaped = {}
+        for w, o in masters:
+            orig = _coords_at(font, n, _internal_norm(font, w))
+            new = _coords_at(font, n, _internal_norm(font, o))
+            n_pts = len(orig) - 4
+            # 그 굵기의 원래 폭은 지키고, 가늘어진 잉크를 폭 가운데로
+            gap = ((orig[n_pts + 1][0] - orig[n_pts][0]) - (new[n_pts + 1][0] - new[n_pts][0])) // 2
+            pts = [(x + gap, y) for x, y in new[:n_pts]] + list(orig[n_pts:])
+            shaped[w] = GlyphCoordinates(pts)
+        base = shaped[d]
+        gvar.variations[n] = [
+            TupleVariation(axes, [tuple(p) for p in (shaped[w] - base)])
+            for w, axes in ((lo, {"wght": (-1.0, -1.0, 0.0)}), (hi, {"wght": (0.0, 1.0, 1.0)}))
+        ]
+        g.coordinates = GlyphCoordinates(base[:n_pts])
+        g.recalcBounds(glyf)
+        hmtx[n] = (base[n_pts + 1][0] - base[n_pts][0], g.xMin)
+    return len(FIGURE_LIGHTEN)
+
+
+def _shift(font, name, dx=0, dy=0):
+    g = font["glyf"][name]
+    if g.isComposite():
+        for c in g.components:
+            c.x, c.y = c.x + dx, c.y + dy
+    elif g.numberOfContours > 0:
+        g.coordinates.translate((dx, dy))
+    g.recalcBounds(font["glyf"])
+
+
+def center_symbols(font):
+    """수학 기호·화살표의 세로 가운데를 SYMBOL_CENTER로, 양옆 여백을 SYMBOL_SPACE씩 더."""
+    glyf, hmtx = font["glyf"], font["hmtx"]
+    done = 0
+    for n in SYMBOLS:
+        if n not in glyf.glyphs:
+            continue
+        g = glyf[n]
+        g.recalcBounds(glyf)
+        dy = round(SYMBOL_CENTER - (g.yMin + g.yMax) / 2)
+        # 이미 옮긴 기호를 부품으로 쓰는 .case는 세로만 맞춘다(가로 여백은 부품이 이미 가짐)
+        inherited = g.isComposite() and all(c.glyphName in SYMBOLS for c in g.components)
+        _shift(font, n, 0 if inherited else SYMBOL_SPACE, dy)
+        adv, _ = hmtx[n]
+        hmtx[n] = (adv + 2 * SYMBOL_SPACE, glyf[n].xMin)
+        done += 1
+    return done
+
+
+def raise_brackets(font):
+    for n in BRACKETS:
+        _shift(font, n, 0, BRACKET_RAISE)
+        font["hmtx"][n] = (font["hmtx"][n][0], font["glyf"][n].xMin)
 
 
 def raise_hangul(font):
@@ -473,11 +581,15 @@ def main():
     print("굵기: " + ", ".join(f"{u}→{o}" for u, o in WEIGHT_MAP.items()))
     n = tighten_hangul(font)
     print(f"한글 {n}자 자간 -{HANGUL_TIGHTEN}유닛")
+    lighten_figures(font)
     n = scale_figures(font)
     print(f"숫자·기호 {n}자 ×{FIGURE_SCALE:.3f}")
     narrow_space(font)
-    toss_middle_dot(font)
+    wide_middle_dot(font)
+    n_sym = center_symbols(font)
+    raise_brackets(font)
     raise_hangul(font)
+    print(f"기호 {n_sym}자 가운데 {SYMBOL_CENTER}, 괄호 +{BRACKET_RAISE}, 6·8·9·5 가볍게")
     print(f"띄어쓰기 {SPACE_WIDTH}, 한글 +{HANGUL_RAISE}")
     brand.add_logo_glyphs(font)
     print(f"어데닉 로고 U+{brand.WORDMARK_CP:04X}, U+{brand.MARK_CP:04X}, ss20")
