@@ -1,0 +1,40 @@
+/* Audeniq Sans — 어데닉 산스
+   경로는 이 파일 기준(../fonts/web). 자체 CDN에 올릴 때는 url()만 바꾸면 됩니다. */
+
+@font-face {
+  font-family: "Audeniq Sans";
+  font-style: normal;
+  font-weight: 45 930;
+  font-display: swap;
+  src: url("../fonts/web/AudeniqSansVariable.woff2") format("woff2-variations"),
+       url("../fonts/web/AudeniqSansVariable.woff2") format("woff2");
+}
+
+/* 고정 굵기만 받는 환경(오래된 메일 앱·PDF 도구)용 */
+@font-face { font-family: "Audeniq Sans Static"; font-weight: 400; font-display: swap; src: url("../fonts/web/AudeniqSans-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Audeniq Sans Static"; font-weight: 600; font-display: swap; src: url("../fonts/web/AudeniqSans-SemiBold.woff2") format("woff2"); }
+@font-face { font-family: "Audeniq Sans Static"; font-weight: 700; font-display: swap; src: url("../fonts/web/AudeniqSans-Bold.woff2") format("woff2"); }
+@font-face { font-family: "Audeniq Sans Static"; font-weight: 800; font-display: swap; src: url("../fonts/web/AudeniqSans-ExtraBold.woff2") format("woff2"); }
+
+:root {
+  --aq-font-sans: "Audeniq Sans", "Audeniq Sans Static", "Pretendard Variable", Pretendard,
+                  -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+
+  /* 자간 — 한글은 글꼴 안에 -0.02em이 이미 들어 있어요. 아래 값은 그 위에 더하는 값입니다.
+     SF Pro처럼 작은 글자는 그대로, 클수록 조금씩 좁힙니다.
+     (Pretendard 때 쓰던 -0.02 / -0.04em은 각각 0 / -0.02em이 됩니다) */
+  --aq-tracking-caption: 0;        /* 11–13px */
+  --aq-tracking-body: 0;           /* 14–16px */
+  --aq-tracking-title: -0.01em;    /* 18–22px */
+  --aq-tracking-headline: -0.02em; /* 28–36px */
+  --aq-tracking-display: -0.03em;  /* 36px 이상, 큰 금액 */
+}
+
+/* 금액·표: 자릿수가 맞는 고정폭 숫자 */
+.aq-num, .aq-money-num { font-variant-numeric: tabular-nums; }
+
+/* 하나만 크게 보이는 금액(정산 총액 등)은 가변폭이 더 단단해 보여요 — 토스와 같은 구분 */
+.aq-num-hero { font-variant-numeric: proportional-nums; letter-spacing: var(--aq-tracking-display); }
+
+/* ISRC·UPC·계좌·코드: 0/O, I/l/1을 가르는 모양 + 고정폭 */
+.aq-code { font-variant-numeric: tabular-nums slashed-zero; font-feature-settings: "tnum", "zero", "cv08", "cv05"; }

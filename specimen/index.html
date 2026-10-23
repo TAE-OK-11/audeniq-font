@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audeniq Sans</title>
+<link rel="stylesheet" href="../css/audeniq-sans.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+  :root { --ink:#171B29; --sub:#5B6478; --line:#EEF1F6; --blue:#3B63F3; --bg:#fff; --card:#F5F8FF; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink:#EEF1F6; --sub:#9AA3B5; --line:#262B3A; --bg:#10131C; --card:#171B29; } }
+  :root[data-theme="dark"] { --ink:#EEF1F6; --sub:#9AA3B5; --line:#262B3A; --bg:#10131C; --card:#171B29; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--aq-font-sans); }
+  main { max-width:1040px; margin:0 auto; padding:48px 16px 96px; }
+  h1 { font-size:clamp(40px,8vw,72px); font-weight:800; letter-spacing:var(--aq-tracking-display); margin:0 0 8px; }
+  h2 { font-size:22px; font-weight:700; letter-spacing:var(--aq-tracking-title); margin:56px 0 16px; }
+  p.lead { color:var(--sub); font-size:16px; line-height:1.7; margin:0; max-width:640px; }
+  .pair { display:grid; grid-template-columns:96px 1fr; gap:4px 16px; align-items:baseline; padding:14px 0; border-top:1px solid var(--line); }
+  .pair small { color:var(--sub); font-size:12px; font-weight:600; }
+  .pt { font-family:"Pretendard Variable", Pretendard, sans-serif; }
+  .row { overflow-wrap:anywhere; }
+  .card { background:var(--card); border-radius:20px; padding:24px; }
+  .amount { font-size:clamp(32px,6vw,44px); font-weight:800; letter-spacing:var(--aq-tracking-display); }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  td { padding:10px 0; border-top:1px solid var(--line); }
+  td:last-child { text-align:right; }
+  .weights div { font-size:28px; line-height:1.5; letter-spacing:var(--aq-tracking-headline); }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+  .neg { color:#D6283A; }
+  code { font-family:ui-monospace, Menlo, monospace; font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Audeniq Sans</h1>
+  <p class="lead">Pretendard를 바탕으로 한글 자간, 숫자·영문 굵기, 금액의 빼기 기호를 어데닉 화면에 맞게 다듬은 서체예요. 비교 줄은 위가 Pretendard, 아래가 Audeniq Sans입니다.</p>
+
+  <h2>한글 자간</h2>
+  <div class="pair pt"><small>Pretendard</small><div class="row" style="font-size:18px;line-height:1.7">정산 금액은 1,234,567원이에요. 어데닉 스튜디오에서 발매를 신청했어요. 검토가 끝나면 알려 드릴게요.</div></div>
+  <div class="pair"><small>Audeniq Sans</small><div class="row" style="font-size:18px;line-height:1.7">정산 금액은 1,234,567원이에요. 어데닉 스튜디오에서 발매를 신청했어요. 검토가 끝나면 알려 드릴게요.</div></div>
+  <div class="pair pt"><small>Pretendard<br>-0.02em</small><div class="row" style="font-size:18px;line-height:1.7;letter-spacing:-.02em">정산 금액은 1,234,567원이에요. 어데닉 스튜디오에서 발매를 신청했어요. 검토가 끝나면 알려 드릴게요.</div></div>
+
+  <h2>숫자·영문 굵기</h2>
+  <div class="pair pt"><small>Pretendard</small><div class="row" style="font-size:22px">10월 정산 1,234,567원 · Spotify · Apple Music</div></div>
+  <div class="pair"><small>Audeniq Sans</small><div class="row" style="font-size:22px">10월 정산 1,234,567원 · Spotify · Apple Music</div></div>
+
+  <h2>금액과 기호</h2>
+  <div class="pair pt"><small>Pretendard</small><div class="row amount">₩12,000 -98,000원</div></div>
+  <div class="pair"><small>Audeniq Sans</small><div class="row amount">₩12,000 -98,000원</div></div>
+  <div class="pair"><small>코드는 그대로</small><div class="row aq-code" style="font-size:20px">KR-A12-26-00001 · 2026-10-23 · 010-1234-5678</div></div>
+
+  <h2>정산 화면에서</h2>
+  <div class="grid2">
+    <div class="card">
+      <div style="font-size:14px;font-weight:700;color:var(--sub)">10월 정산 예정 금액</div>
+      <div class="amount aq-num-hero">1,234,567원</div>
+      <table class="aq-num">
+        <tr><td>Spotify</td><td>844,120원</td></tr>
+        <tr><td>Apple Music</td><td>301,447원</td></tr>
+        <tr><td>멜론</td><td>111,000원</td></tr>
+        <tr><td>환불 조정</td><td class="neg">-22,000원</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <div style="font-size:14px;font-weight:700;color:var(--sub)">발매 코드</div>
+      <table class="aq-code">
+        <tr><td>ISRC</td><td>KR-A12-26-00001</td></tr>
+        <tr><td>UPC</td><td>8800000000017</td></tr>
+        <tr><td>계좌</td><td>110-123-456789</td></tr>
+        <tr><td>지급 수수료</td><td>₩1,000</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2>굵기</h2>
+  <div class="weights">
+    <div style="font-weight:400">400 본문 · 발매를 신청했어요 ₩48,000</div>
+    <div style="font-weight:600">600 보조 · 발매를 신청했어요 ₩48,000</div>
+    <div style="font-weight:700">700 제목 · 발매를 신청했어요 ₩48,000</div>
+    <div style="font-weight:800">800 숫자 · 발매를 신청했어요 ₩48,000</div>
+  </div>
+</main>
+</body>
+</html>
