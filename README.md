@@ -1,6 +1,6 @@
 # Audeniq Sans · 어데닉 산스
 
-AUDENIQ의 제품 서체예요. [Pretendard](https://github.com/orioncactus/pretendard) 1.3.9를 바탕으로 한글 자간, 숫자·영문 굵기, 금액의 빼기 기호를 어데닉 화면에 맞게 다듬었어요. 무엇을 왜 바꿨는지는 [DESIGN.md](DESIGN.md)에 있어요.
+AUDENIQ의 제품 서체예요. [Pretendard](https://github.com/orioncactus/pretendard) 1.3.9를 바탕으로 한글 자간, 숫자·영문 굵기, 금액의 빼기 기호를 어데닉 화면에 맞게 다듬고, 어데닉 로고를 글자로 넣었어요. 무엇을 왜 바꿨는지는 [DESIGN.md](DESIGN.md)에 있어요.
 
 ## 파일
 
@@ -11,7 +11,7 @@ AUDENIQ의 제품 서체예요. [Pretendard](https://github.com/orioncactus/pret
 | `fonts/web/AudeniqSansVariable.woff2` | 웹용 가변 글꼴, 한글 11,172자 전체 |
 | `fonts/web/AudeniqSansVariable-Subset.woff2` | 웹용 가변 글꼴, 자주 쓰는 한글 2,780자(KS X 1001 2,350자 포함) + 라틴·기호. Pretendard `subset_glyphs.txt`와 같은 범위 |
 | `fonts/web/AudeniqSans-*.woff2` | 웹용 고정 굵기 |
-| `css/audeniq-sans.css` | `@font-face`, 자간 토큰, `.aq-num` · `.aq-num-hero` · `.aq-code` |
+| `css/audeniq-sans.css` | `@font-face`, 자간 토큰, `.aq-num` · `.aq-num-hero` · `.aq-code` · `.aq-logo` |
 | `specimen/index.html` | Pretendard와 나란히 보는 견본 |
 
 ## 스튜디오에 적용
@@ -29,8 +29,10 @@ python3 build/build.py --check     # 원본을 npm에서 받아 해시 확인 �
 python3 build/build.py --variable-only   # 가변 글꼴만 (빠름)
 ```
 
-원본(`sources/`)은 저장소에 넣지 않아요. 빌드가 npm의 `pretendard@1.3.9`를 받아 SHA-1을 확인해요. `tests/check.py`는 이름, 한글 폭, 숫자·영문 획 굵기, 빼기 기호 규칙, 고정폭 숫자, 세로 중심을 검사해요.
+원본(`sources/`)은 저장소에 넣지 않아요. 빌드가 npm의 `pretendard@1.3.9`를 받아 SHA-1을 확인해요. `tests/check.py`는 이름, 한글 폭, 숫자·영문 획 굵기, 빼기 기호 규칙, 고정폭 숫자, 세로 중심, 로고 글자, 고정 굵기 글꼴의 기능 이름을 검사해요.
 
 ## 라이선스
 
 SIL Open Font License 1.1 ([OFL.txt](OFL.txt)). Pretendard(길형진), Inter(Rasmus Andersson), 본고딕/Source Han Sans(Adobe, 산돌커뮤니케이션), M PLUS 1p를 바탕으로 했어요. OFL에 따라 Pretendard라는 이름은 쓰지 않아요.
+
+로고 글자(U+F8F0, U+F8F1)는 AUDENIQ 상표예요. OFL은 글꼴 파일의 사용·수정·배포를 허락할 뿐, 상표권을 넘기지 않아요.

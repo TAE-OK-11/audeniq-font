@@ -16,13 +16,16 @@ import urllib.request
 
 from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
 from fontTools.subset import Options, Subsetter
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTFont, newTable
 from fontTools.ttLib.tables import otTables
 from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
 from fontTools.ttLib.tables.TupleVariation import TupleVariation
 from fontTools.varLib.iup import iup_delta
 from fontTools.varLib.models import supportScalar
 from fontTools.varLib import instancer
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import brand  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = os.path.join(ROOT, "sources")
@@ -34,7 +37,7 @@ PRETENDARD_SHA1 = "b1f86d5a7a729f518974098fcf85f34fff3526b7"  # npm dist.shasum
 PRETENDARD_MEMBER = "package/dist/public/variable/PretendardVariable.ttf"
 SUBSET_MEMBER = "package/subset_glyphs.txt"
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 FAMILY = "Audeniq Sans"
 VENDOR = "AUDQ"
 
@@ -189,6 +192,15 @@ feature calt {
 feature rclt {
     lookup AQ_MINUS;
 } rclt;
+
+# 어데닉 로고: 'AUDENIQ'를 대문자로 쓰고 ss20을 켜면 워드마크 한 글자가 된다(기본은 꺼짐 — 문장 속 AUDENIQ는 글자 그대로).
+feature ss20 {
+    featureNames {
+        name "AUDENIQ wordmark";
+        name 3 1 0x0412 "AUDENIQ 로고";
+    };
+    sub A U D E N I Q by aq.wordmark;
+} ss20;
 """
 
 
@@ -196,7 +208,17 @@ def merge_features(font, fea):
     """원래 GSUB을 덮지 않고, 임시 글꼴에서 만든 룩업을 뒤에 붙인 뒤 기능 목록에 더한다."""
     tmp = TTFont()
     tmp.setGlyphOrder(font.getGlyphOrder())
+    tmp["name"] = newTable("name")
+    tmp["name"].names = []
     addOpenTypeFeaturesFromString(tmp, fea)
+    # featureNames가 만든 이름(256~)을 원래 글꼴의 비어 있는 번호로 옮긴다.
+    next_id = max(n.nameID for n in font["name"].names) + 1
+    remap = {}
+    for n in sorted(tmp["name"].names, key=lambda n: n.nameID):
+        if n.nameID not in remap:
+            remap[n.nameID] = next_id
+            next_id += 1
+        font["name"].setName(n.toUnicode(), remap[n.nameID], n.platformID, n.platEncID, n.langID)
     src = tmp["GSUB"].table
     dst = font["GSUB"].table
     base = len(dst.LookupList.Lookup)
@@ -211,21 +233,25 @@ def merge_features(font, fea):
                 for r in rs.ChainSubRule:
                     for rec in r.SubstLookupRecord:
                         rec.LookupListIndex += base
-    added = {}
+    added, params = {}, {}
     for rec in src.FeatureList.FeatureRecord:
         added.setdefault(rec.FeatureTag, []).extend(i + base for i in rec.Feature.LookupListIndex)
+        fp = rec.Feature.FeatureParams
+        if fp is not None and getattr(fp, "UINameID", None) in remap:
+            fp.UINameID = remap[fp.UINameID]
+        params[rec.FeatureTag] = fp
     have = set()
     for rec in dst.FeatureList.FeatureRecord:
         if rec.FeatureTag in added:
             have.add(rec.FeatureTag)
             rec.Feature.LookupListIndex = sorted(set(rec.Feature.LookupListIndex) | set(added[rec.FeatureTag]))
             rec.Feature.LookupCount = len(rec.Feature.LookupListIndex)
-    # 원본에 없던 기능(rclt)은 새로 만들어 모든 언어 체계에 건다.
+    # 원본에 없던 기능(rclt, ss20)은 새로 만들어 모든 언어 체계에 건다.
     for tag in sorted(set(added) - have):
         rec = otTables.FeatureRecord()
         rec.FeatureTag = tag
         rec.Feature = otTables.Feature()
-        rec.Feature.FeatureParams = None
+        rec.Feature.FeatureParams = params.get(tag)
         rec.Feature.LookupListIndex = sorted(set(added[tag]))
         rec.Feature.LookupCount = len(rec.Feature.LookupListIndex)
         index = len(dst.FeatureList.FeatureRecord)
@@ -303,7 +329,7 @@ def subset(font_path, out_path, text_path):
     opts.notdef_outline = True
     opts.flavor = "woff2"
     s = Subsetter(opts)
-    s.populate(text=text + "−")
+    s.populate(text=text + "−" + chr(brand.WORDMARK_CP) + chr(brand.MARK_CP))
     s.subset(f)
     f.flavor = "woff2"
     f.save(out_path)
@@ -313,8 +339,17 @@ def static_instance(var_path, wght, style):
     f = TTFont(var_path)
     inst = instancer.instantiateVariableFont(f, {"wght": wght}, updateFontNames=False)
     name = inst["name"]
+    # 굵기 축 이름(fvar/STAT)만 지운다. ss·cv 기능 이름은 GSUB이 계속 부른다.
+    used = set()
+    for rec in inst["GSUB"].table.FeatureList.FeatureRecord:
+        fp = rec.Feature.FeatureParams
+        for attr in ("UINameID", "FeatUILabelNameID", "FeatUITooltipTextNameID", "SampleTextNameID", "FirstParamUILabelNameID"):
+            if fp is not None and getattr(fp, attr, None):
+                used.add(getattr(fp, attr))
+        if fp is not None and getattr(fp, "NumNamedParameters", 0):
+            used.update(range(fp.FirstParamUILabelNameID, fp.FirstParamUILabelNameID + fp.NumNamedParameters))
     for rec in list(name.names):
-        if rec.nameID >= 256:
+        if rec.nameID >= 256 and rec.nameID not in used:
             name.removeNames(nameID=rec.nameID)
     is_rbi = style in ("Regular", "Bold")
     for lang, fam in ((0x409, FAMILY), (0x412, "어데닉 산스")):
@@ -346,6 +381,8 @@ def main():
     print(f"한글 {n}자 자간 -{HANGUL_TIGHTEN}유닛")
     n = boost_latin(font)
     print(f"숫자·영문 {n}자 굵기 +{LATIN_BOOST}")
+    brand.add_logo_glyphs(font)
+    print(f"어데닉 로고 U+{brand.WORDMARK_CP:04X}, U+{brand.MARK_CP:04X}, ss20")
     merge_features(font, EXTRA_FEA)
     rename(font)
 

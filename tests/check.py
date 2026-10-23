@@ -93,6 +93,28 @@ for ch in "한H0":
     mid = (b[1] + b[3]) / 2
     check(abs(mid - box_mid) < 40, f"'{ch}' 중심 {mid:.0f} ≈ 줄 상자 중심 {box_mid:.0f}")
 
+# 어데닉 로고: U+F8F0 워드마크, U+F8F1 A 심볼, ss20을 켤 때만 'AUDENIQ' → 워드마크.
+check(cmap.get(0xF8F0) == "aq.wordmark" and cmap.get(0xF8F1) == "aq.mark", "로고 글자 U+F8F0·U+F8F1")
+glyphs, _ = shape(VAR, "AUDENIQ 스튜디오")
+check(glyphs[:2] == ["A", "U"], "기본은 문장 속 AUDENIQ를 글자 그대로")
+glyphs, _ = shape(VAR, "AUDENIQ 스튜디오", {"ss20": True})
+check(glyphs[0] == "aq.wordmark", "ss20을 켜면 AUDENIQ → 워드마크")
+glyphs, _ = shape(VAR, "Audeniq", {"ss20": True})
+check("aq.wordmark" not in glyphs, "대문자 AUDENIQ만 바뀜")
+colr = {r.BaseGlyph for r in f["COLR"].table.BaseGlyphList.BaseGlyphPaintRecord}
+check(colr == {"aq.wordmark", "aq.mark"}, "COLRv1 색 층: 워드마크·심볼")
+for name in ("aq.wordmark", "aq.mark"):
+    b = ink(f, name, 400)
+    check(abs(b[3] - f["OS/2"].sCapHeight) < 120 and b[1] > -60, f"{name} 높이는 대문자 높이 ({b[1]:.0f}..{b[3]:.0f})")
+
+# 고정 굵기 글꼴도 ss·cv 기능 이름을 갖고 있다.
+for path in sorted(glob.glob(os.path.join(ROOT, "fonts", "static", "*.ttf")))[:1]:
+    t = TTFont(path)
+    missing = [r.FeatureTag for r in t["GSUB"].table.FeatureList.FeatureRecord
+               if r.Feature.FeatureParams is not None and getattr(r.Feature.FeatureParams, "UINameID", None)
+               and t["name"].getDebugName(r.Feature.FeatureParams.UINameID) is None]
+    check(not missing, f"{os.path.basename(path)}: 기능 이름 빠짐 없음 {missing or ''}")
+
 if fails:
     print(f"\n{len(fails)}개 실패")
     sys.exit(1)

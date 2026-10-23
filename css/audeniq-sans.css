@@ -38,3 +38,8 @@
 
 /* ISRC·UPC·계좌·코드: 0/O, I/l/1을 가르는 모양 + 고정폭 */
 .aq-code { font-variant-numeric: tabular-nums slashed-zero; font-feature-settings: "tnum", "zero", "cv08", "cv05"; }
+
+/* 어데닉 로고 글자 — 글자 색을 따르고 Q 꼬리·A 가로획만 브랜드 색(COLRv1).
+   ① 대문자 AUDENIQ를 워드마크로: <span class="aq-logo">AUDENIQ</span> (읽기 프로그램에는 AUDENIQ로 읽혀요)
+   ② 글자 하나로: U+F8F0 워드마크, U+F8F1 A 심볼 — 이때는 role="img" aria-label="AUDENIQ"를 붙여 주세요 */
+.aq-logo { font-family: "Audeniq Sans"; font-feature-settings: "ss20"; letter-spacing: 0; }
