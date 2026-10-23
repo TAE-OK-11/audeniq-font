@@ -159,6 +159,32 @@ for ch in "한H0":
     mid = (b[1] + b[3]) / 2
     check(abs(mid - box_mid) < 40, f"'{ch}' 중심 {mid:.0f} ≈ 줄 상자 중심 {box_mid:.0f}")
 
+# 어데닉 문장 디테일: 실제 어데닉 문구의 문맥에서만 바뀐다(calt를 꺼도 같음).
+import details as D  # noqa: E402
+
+for text, want, absent in (
+    ("계약 · 연동", "aq.periodcentered.spaced", None), ("심사·문의", "periodcentered", "aq.periodcentered.spaced"),
+    ("콘솔 — 관리자", "aq.emdash.spaced", None), ("a—b", "emdash", "aq.emdash.spaced"),
+    ("저장하는 중…", "ellipsis.hang", None), ("wait…", "ellipsis", "ellipsis.hang"),
+    ("‘다시 검사’", "aq.quoteleft.hang", None), ("‘다시 검사’", "aq.quoteright.hang", None),
+    ("“회사”", "aq.quotedblright.hang", None), ("don’t", "quoteright", "aq.quoteright.hang"),
+    ("14:30", "colon.case", None), ("KR-A12-26-00001", "hyphen.case", None), ("D-1", "hyphen.case", None),
+):
+    for feats in ({}, {"calt": False}):
+        glyphs, _ = shape(VAR, text, feats)
+        ok = want in glyphs and (absent is None or absent not in glyphs)
+        check(ok, f"'{text}'{' (calt 꺼짐)' if feats else ''} → {want}")
+dot = ink(f, "aq.periodcentered.spaced", 400)
+check(gsA["aq.periodcentered.spaced"].width == D.SPACED_DOT_WIDTH and abs((dot[1] + dot[3]) / 2 - D.SYMBOL_CENTER) <= 2, "' · ' 점 폭·높이")
+dash, full = ink(f, "aq.emdash.spaced", 400), ink(f, "emdash", 400)
+check(abs((dash[2] - dash[0]) - (full[2] - full[0]) * D.SPACED_DASH_SCALE) <= 2, f"' — ' 길이 ×{D.SPACED_DASH_SCALE}")
+q, q0 = ink(f, "aq.quoteleft.hang", 400), ink(f, "quoteleft", 400)
+check(round(q[1] - q0[1]) == D.QUOTE_RAISE, f"한글 따옴표 +{D.QUOTE_RAISE}")
+for w in (400, 700):
+    p, c = ink(f, "uni2117", w), ink(f, "copyright", w)
+    check(abs((p[3] - p[1]) - (c[3] - c[1])) <= 6 and abs((p[1] + p[3]) / 2 - (c[1] + c[3]) / 2) <= 3,
+          f"℗와 ©가 같은 크기·높이 (굵기 {w}: {p[3]-p[1]:.0f} / {c[3]-c[1]:.0f})")
+
 # 어데닉 로고: U+F8F0 워드마크, U+F8F1 A 심볼, ss20을 켤 때만 'AUDENIQ' → 워드마크.
 check(cmap.get(0xF8F0) == "aq.wordmark" and cmap.get(0xF8F1) == "aq.mark", "로고 글자 U+F8F0·U+F8F1")
 glyphs, _ = shape(VAR, "AUDENIQ 스튜디오")

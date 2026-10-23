@@ -1,0 +1,118 @@
+"""어데닉 문장 디테일 — 어데닉 화면 문구(web/ 아래 한국어 문자열)에서 실제로 많이 쓰는 기호를 문맥에 맞게.
+
+센 값(한국어 문자열 안, 2026-10 기준):
+  ·  1,571번 — 한글·한글 붙여 씀 1,019(65%), 앞뒤 띄어 씀 316(20%), 영문·영문 113
+  ‘’ 208번 — 거의 다 한글을 감쌈(‘다시 검사’)
+  —  96번 — 모두 앞뒤를 띄어 씀(콘솔 — 관리자)
+  …  79번 — 74번이 한글 바로 뒤(저장하는 중…)
+  ℗ © 39번 — 발매 정보에서 나란히(℗ 2026 레이블 / © 2026 레이블)
+  :  시각(14:30), -  코드(ISRC KR-A12-26, D-1 ~ D-11, 날짜 2026-09-30)
+
+글자 모양은 문맥에서만 바뀐다. 영어 문장의 '·', '—', '…', 따옴표는 그대로다.
+"""
+from fontTools.ttLib.tables._g_l_y_f import Glyph, GlyphComponent
+
+SYMBOL_CENTER = 745  # build.SYMBOL_CENTER와 같은 높이(숫자·한글 가운데)
+SPACED_DOT_WIDTH = 560  # 띄어 쓴 ' · '의 점 폭 — 양옆 띄어쓰기가 이미 여백이다
+SPACED_DASH_SCALE = 0.75  # 띄어 쓴 ' — '는 1em 가까운 줄이 너무 길다(0.6은 하이픈처럼 보였다)
+SPACED_DASH_SIDE = 40
+QUOTE_RAISE = 140  # 한글을 감싸는 따옴표: 영문 대문자 높이(1448) → 한글 윗선(약 1630) 쪽으로
+PHONOGRAM_SCALE = 1.318  # ℗를 ©와 같은 크기로(작은 ℗ 고리 1132 → © 고리 1492)
+
+
+def _composite(font, name, parts, adv):
+    """parts: [(glyph, dx, dy, (sx, sy) 또는 None)]"""
+    glyf, hmtx, gvar = font["glyf"], font["hmtx"], font["gvar"]
+    g = Glyph()
+    g.numberOfContours = -1
+    g.components = []
+    for base, dx, dy, scale in parts:
+        c = GlyphComponent()
+        c.glyphName, c.x, c.y = base, round(dx), round(dy)
+        c.flags = 0x0004  # ROUND_XY_TO_GRID
+        if scale:
+            c.transform = [[scale[0], 0], [0, scale[1]]]
+        g.components.append(c)
+    order = font.getGlyphOrder()
+    glyf[name] = g
+    if name not in order:
+        order.append(name)
+    g.recalcBounds(glyf)
+    hmtx[name] = (round(adv), getattr(g, "xMin", 0))
+    gvar.variations[name] = []  # 부품 위치는 굵기와 상관없이 같다(부품 모양은 굵기에 따라 바뀐다)
+    font.setGlyphOrder(order)
+    glyf.glyphOrder = order
+
+
+def _bounds(font, name):
+    g = font["glyf"][name]
+    g.recalcBounds(font["glyf"])
+    return g.xMin, g.yMin, g.xMax, g.yMax
+
+
+def add_detail_glyphs(font):
+    hmtx = font["hmtx"]
+    # ' · ' — 점은 그대로, 폭만 좁게, 높이는 기호 가운데
+    x0, y0, x1, y1 = _bounds(font, "period")
+    _composite(font, "aq.periodcentered.spaced",
+               [("period", (SPACED_DOT_WIDTH - (x1 - x0)) / 2 - x0, SYMBOL_CENTER - (y0 + y1) / 2, None)],
+               SPACED_DOT_WIDTH)
+    # ' — ' — 가로로 줄이고 한글 가운데 높이로
+    x0, y0, x1, y1 = _bounds(font, "emdash")
+    s = SPACED_DASH_SCALE
+    _composite(font, "aq.emdash.spaced",
+               [("emdash", SPACED_DASH_SIDE - x0 * s, SYMBOL_CENTER - (y0 + y1) / 2, (s, 1))],
+               (x1 - x0) * s + 2 * SPACED_DASH_SIDE)
+    # 한글을 감싸는 따옴표
+    for q in ("quoteleft", "quoteright", "quotedblleft", "quotedblright"):
+        _composite(font, f"aq.{q}.hang", [(q, 0, QUOTE_RAISE, None)], hmtx[q][0])
+    # ℗를 ©와 같은 크기·같은 가운데로. 고리 굵기는 ©와 400 언저리에서 맞는다(작은 ℗는 고리가 얇게 그려져 있다).
+    cx0, cy0, cx1, cy1 = _bounds(font, "copyright")
+    px0, py0, px1, py1 = _bounds(font, "uni2117")
+    k = PHONOGRAM_SCALE
+    src = "aq.phonogram.small"
+    font["glyf"][src] = font["glyf"]["uni2117"]
+    font["gvar"].variations[src] = font["gvar"].variations.get("uni2117", [])
+    hmtx[src] = hmtx["uni2117"]
+    order = font.getGlyphOrder()
+    if src not in order:
+        order.append(src)
+    font.setGlyphOrder(order)
+    font["glyf"].glyphOrder = order
+    dx = (cx0 + cx1) / 2 - (px0 + px1) / 2 * k
+    dy = (cy0 + cy1) / 2 - (py0 + py1) / 2 * k
+    _composite(font, "uni2117", [(src, dx, dy, (k, k))], hmtx["copyright"][0])
+
+
+def detail_fea(font):
+    cmap = font.getBestCmap()
+    hangul = " ".join(sorted({cmap[u] for u in range(0xAC00, 0xD7A4) if u in cmap}))
+    return f"""
+@AQ_HANGUL = [{hangul}];
+@AQ_CODE = [@AQ_FIG A-Z];
+
+lookup AQ_DETAILS {{
+    # 시각 14:30 — 숫자 사이 ':'를 숫자 가운데로(Pretendard는 calt에서만 해 줘서 자간을 주면 내려앉았다)
+    sub @AQ_FIG colon' @AQ_FIG by colon.case;
+    # 코드 KR-A12-26, D-1, 2026-09-30 — 대문자·숫자 사이 '-'를 가운데로
+    sub @AQ_CODE hyphen' @AQ_CODE by hyphen.case;
+    # 띄어 쓴 ' · ', ' — '
+    sub space periodcentered' space by aq.periodcentered.spaced;
+    sub space [emdash emdash.case]' space by aq.emdash.spaced;  # 앞선 calt가 emdash.case로 바꿔 두기도 한다
+    # 한글 뒤 말줄임표는 가운데로(저장하는 중…)
+    sub @AQ_HANGUL ellipsis' by ellipsis.hang;
+    # 한글을 감싸는 따옴표는 한글 높이로(‘다시 검사’)
+    sub quoteleft' @AQ_HANGUL by aq.quoteleft.hang;
+    sub quotedblleft' @AQ_HANGUL by aq.quotedblleft.hang;
+    sub @AQ_HANGUL quoteright' by aq.quoteright.hang;
+    sub @AQ_HANGUL quotedblright' by aq.quotedblright.hang;
+}} AQ_DETAILS;
+
+feature calt {{
+    lookup AQ_DETAILS;
+}} calt;
+
+feature rclt {{
+    lookup AQ_DETAILS;
+}} rclt;
+"""

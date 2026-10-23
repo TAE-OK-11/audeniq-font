@@ -26,6 +26,7 @@ from fontTools.varLib import instancer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import brand  # noqa: E402
+import details  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = os.path.join(ROOT, "sources")
@@ -37,7 +38,7 @@ PRETENDARD_SHA1 = "b1f86d5a7a729f518974098fcf85f34fff3526b7"  # npm dist.shasum
 PRETENDARD_MEMBER = "package/dist/public/variable/PretendardVariable.ttf"
 SUBSET_MEMBER = "package/subset_glyphs.txt"
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 FAMILY = "Audeniq Sans"
 VENDOR = "AUDQ"
 
@@ -591,9 +592,11 @@ def main():
     raise_hangul(font)
     print(f"기호 {n_sym}자 가운데 {SYMBOL_CENTER}, 괄호 +{BRACKET_RAISE}, 6·8·9·5 가볍게")
     print(f"띄어쓰기 {SPACE_WIDTH}, 한글 +{HANGUL_RAISE}")
+    details.add_detail_glyphs(font)
+    print("문장 디테일: ' · ', ' — ', 한글 뒤 …, 한글 따옴표, 시각 :, 코드 -, ℗ 크기")
     brand.add_logo_glyphs(font)
     print(f"어데닉 로고 U+{brand.WORDMARK_CP:04X}, U+{brand.MARK_CP:04X}, ss20")
-    merge_features(font, EXTRA_FEA)
+    merge_features(font, EXTRA_FEA + details.detail_fea(font))
     rename(font)
 
     for d in ("variable", "static", "web"):
