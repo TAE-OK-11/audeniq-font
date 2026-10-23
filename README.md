@@ -11,8 +11,21 @@ AUDENIQ의 제품 서체예요. [Pretendard](https://github.com/orioncactus/pret
 | `fonts/web/AudeniqSansVariable.woff2` | 웹용 가변 글꼴, 한글 11,172자 전체 |
 | `fonts/web/AudeniqSansVariable-Subset.woff2` | 웹용 가변 글꼴, 자주 쓰는 한글 2,780자(KS X 1001 2,350자 포함) + 라틴·기호. Pretendard `subset_glyphs.txt`와 같은 범위 |
 | `fonts/web/AudeniqSans-*.woff2` | 웹용 고정 굵기 |
+| `css/audeniq-sans-web.css` | 웹 앱용 `@font-face`만(자주 쓰는 판 + 그 밖의 한글용 전체 판). jsDelivr로 불러 쓰는 파일 |
 | `css/audeniq-sans.css` | `@font-face`, 자간 토큰, `.aq-num` · `.aq-num-hero` · `.aq-code` · `.aq-logo` |
 | `specimen/index.html` | Pretendard와 나란히 보는 견본 |
+
+## jsDelivr로 쓰기
+
+태그를 붙인 버전을 jsDelivr 주소로 불러요(태그 주소는 내용이 바뀌지 않아요).
+
+```html
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preload" href="https://cdn.jsdelivr.net/gh/TAE-OK-11/audeniq-font@v0.8.0/fonts/web/AudeniqSansVariable-Subset.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/TAE-OK-11/audeniq-font@v0.8.0/css/audeniq-sans-web.css">
+```
+
+`font-family: "Audeniq Sans", "Audeniq Sans Full", …`로 써요. CSP에는 `style-src`·`font-src`에 `https://cdn.jsdelivr.net`이 필요해요.
 
 ## 스튜디오에 적용
 
