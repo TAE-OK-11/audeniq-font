@@ -144,7 +144,8 @@ check(all(f.getGlyphSet(location={"wght": w}, normalized=False)[cmap[0x20]].widt
 dot = ink(f, cmap[0xB7], 400)
 check(abs(gsA[cmap[0xB7]].width - B.MIDDLE_DOT_WIDTH) <= 3 and abs((dot[1] + dot[3]) / 2 - B.MIDDLE_DOT_CENTER) <= 2,
       f"가운뎃점 폭 {B.MIDDLE_DOT_WIDTH}, 높이 가운데 {(dot[1]+dot[3])/2:.0f}")
-check(cmap.get(0x2027) == cmap[0xB7] and cmap.get(0x30FB) == cmap[0xB7], "U+2027·U+30FB도 같은 가운뎃점")
+check(cmap.get(0x2027) == cmap[0xB7], "U+2027도 같은 가운뎃점")
+check(cmap.get(0x30FB) == src.getBestCmap()[0x30FB], "일본어 전각 ・(U+30FB)은 원래 전각 글리프")
 
 # 기호: 숫자·한글 가운데로, calt가 꺼져도(letter-spacing) 같은 높이.
 for name in ("plus", "minus", "equal", "arrowright", "plus.case", "minus.case"):
@@ -162,6 +163,7 @@ check(abs(b[1] - b0[1] - B.BRACKET_RAISE) <= 1, f"괄호 {B.BRACKET_RAISE} 위�
 cases = {
     "-1,200원": "minus", "(-5%)": "minus", " -3": "minus",
     "KR-A12-26-00001": None, "2026-10-23": None, "010-1234-5678": None, "a-1": None,
+    "***-**-5678": None, "USD,-2,-1.25": None, "1 / -1": "minus", "환불 -3,000원": "minus",
 }
 for text, want in cases.items():
     glyphs, _ = shape(VAR, text)
@@ -253,6 +255,22 @@ for punct in (".", "!", "(", "…"):
     check(-100 < k < -50, f"'요{punct}' 커닝 {k}")
 check(adv0("a.") == adv0("aa"), "영문 'a.'은 커닝 없음")
 check(adv0("요.", {"kern": False}) == adv0("요요"), "kern을 끄면 커닝 없음")
+
+# 기능 목록: 태그 이름순(OTS), 굵기별로 바꿔 끼우는 표(FeatureVariations)가 원본과 같은 기능을 가리킨다.
+for tag in ("GSUB", "GPOS"):
+    tags = [r.FeatureTag for r in f[tag].table.FeatureList.FeatureRecord]
+    check(tags == sorted(tags), f"{tag} 기능 목록 이름순")
+
+
+def fv_targets(font):
+    t = font["GSUB"].table
+    recs = t.FeatureList.FeatureRecord
+    fv = getattr(t, "FeatureVariations", None)
+    return sorted(recs[s.FeatureIndex].FeatureTag for r in fv.FeatureVariationRecord
+                  for s in r.FeatureTableSubstitution.SubstitutionRecord) if fv else []
+
+
+check(fv_targets(f) == fv_targets(src), f"굵기별 기능 바꿔 끼우기 대상 {fv_targets(f)} = 원본 {fv_targets(src)}")
 
 # 어데닉 로고: U+F8F0 워드마크, U+F8F1 A 심볼, ss20을 켤 때만 'AUDENIQ' → 워드마크.
 check(cmap.get(0xF8F0) == "aq.wordmark" and cmap.get(0xF8F1) == "aq.mark", "로고 글자 U+F8F0·U+F8F1")

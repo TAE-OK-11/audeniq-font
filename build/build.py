@@ -45,6 +45,7 @@ VENDOR = "AUDQ"
 
 # 한글 자간: 어데닉 화면은 한글 본문에 letter-spacing -0.02em을 기본으로 써 왔다.
 # 그 값을 글꼴 안에 넣어 letter-spacing 0이 어데닉 본문 자간이 되게 한다. 양쪽에서 반씩.
+# 400 이하는 다 줄이고 굵을수록 덜 줄여, 가장 굵은 930에서는 0(CSS 700 ≈ −21, 900 ≈ −4).
 HANGUL_TIGHTEN = 40  # 유닛, 2048의 약 0.0195em
 HANGUL_RANGES = [
     (0x1100, 0x11FF),  # 한글 자모
@@ -70,11 +71,11 @@ SPACE_WIDTH = 460
 HANGUL_RAISE = 16
 # 굵기: Pretendard보다 조금 가볍고 시원하게. CSS 굵기 → Pretendard 굵기. 양 끝(45, 930)은 그대로.
 # (토스 Regular ≈ Pretendard 380, 토스 Bold ≈ 610)
-WEIGHT_MAP = {45: 45, 100: 100, 400: 390, 700: 650, 930: 930}
+WEIGHT_MAP = {45: 45, 100: 100, 400: 400, 700: 650, 930: 930}  # 0.4–0.7은 400 → 390. 기본값이 400에서 벗어나 OS/2 굵기와 어긋나서(fontbakery) 400은 그대로
 # 맥락: 가운뎃점은 마침표와 헷갈리지 않게 넓게, 한글 가운데 높이로. (폭 520 → 1031, 높이 633 → 735)
 MIDDLE_DOT_WIDTH = 640  # 스튜디오 필드 테스트: 800은 제목 「정산·지급」이 띄어 쓴 것처럼 보였다
 MIDDLE_DOT_CENTER = 745
-MIDDLE_DOT_ALIASES = (0x2027, 0x30FB)  # 같은 모양으로 맞출 다른 가운뎃점(중앙점 통일)
+MIDDLE_DOT_ALIASES = (0x2027,)  # 같은 모양으로 맞출 다른 가운뎃점. U+30FB(일본어 전각 ・)는 전각 폭이 맞아서 그대로
 # 균형·맥락: + − × ÷ = < > ± ~ 와 화살표를 소문자 가운데(567)에서 숫자·한글 가운데로.
 SYMBOL_CENTER = 745
 SYMBOLS = ["plus", "minus", "multiply", "divide", "equal", "less", "greater", "plusminus", "asciitilde",
@@ -117,9 +118,54 @@ def fetch_sources():
 
 # ---------------------------------------------------------------- 1. 한글 자간
 
-def tighten_hangul(font):
+def keep_unrelated_composites(font):
+    """바꿀 글리프를 부품으로 쓰는 '다른' 글리프(숫자 3을 쓰는 키릴 З, 괄호를 쓰는 전각 （ 등)는
+    원래 모양 복사본(aq.orig.*)을 가리키게 한다. 바꾸기 전에 불러야 한다."""
+    import copy
     cmap = font.getBestCmap()
-    glyf, hmtx = font["glyf"], font["hmtx"]
+    changed = _figure_glyphs(font) | set(SYMBOLS) | set(BRACKETS) | set(FIGURE_LIGHTEN)
+    changed |= {"colon.case", "hyphen.case", cmap[0xB7], cmap[0x20], "uni2117"}
+    glyf, gvar, hmtx = font["glyf"], font["gvar"], font["hmtx"]
+    order = font.getGlyphOrder()
+    copies = {}
+
+    def orig(name):
+        if name not in copies:
+            new = "aq.orig." + name
+            g = copy.deepcopy(glyf[name])
+            copies[name] = new
+            if g.isComposite():
+                for c in g.components:
+                    if c.glyphName in changed:
+                        c.glyphName = orig(c.glyphName)
+            glyf.glyphs[new] = g
+            order.append(new)
+            gvar.variations[new] = copy.deepcopy(gvar.variations.get(name, []))
+            hmtx[new] = hmtx[name]
+        return copies[name]
+
+    redirected = 0
+    for n in list(order):
+        if n in changed or n.startswith("aq.orig."):
+            continue
+        g = glyf[n]
+        if g.isComposite():
+            for c in g.components:
+                if c.glyphName in changed:
+                    c.glyphName = orig(c.glyphName)
+                    redirected += 1
+    font.setGlyphOrder(order)
+    glyf.glyphOrder = order
+    return redirected, len(copies)
+
+
+def tighten_hangul(font):
+    """한글 폭을 HANGUL_TIGHTEN만큼(양쪽 반씩) 줄인다. 400 이하는 그대로 다 줄이고, 굵을수록 덜 줄여
+    가장 굵은 930에서는 원래 폭 — 굵은 한글은 획이 두꺼워 원래 여백이 적어서, 다 줄이면
+    음절끼리 잉크가 겹쳤다(900에서 −83, Pretendard −64)."""
+    from fontTools.varLib.iup import iup_delta
+    cmap = font.getBestCmap()
+    glyf, hmtx, gvar = font["glyf"], font["hmtx"], font["gvar"]
     half = HANGUL_TIGHTEN // 2
     done, changed = set(), 0
     for lo, hi in HANGUL_RANGES:
@@ -135,11 +181,28 @@ def tighten_hangul(font):
             if g.isComposite():
                 for c in g.components:
                     c.x -= half
+                coords, ends = None, None
             elif g.numberOfContours > 0:
+                coords, ctrl = glyf._getCoordinatesAndControls(name, hmtx.metrics, None)
+                ends = ctrl.endPts
                 g.coordinates.translate((-half, 0))
             g.recalcBounds(glyf)
-            # gvar의 위치 차이값은 상대값이라 그대로 두면 모든 굵기에 같은 만큼 적용된다.
             hmtx[name] = (adv - HANGUL_TIGHTEN, g.xMin if hasattr(g, "xMin") else 0)
+            # 가장 굵은 마스터(+1)에서는 되돌린다: 외곽선 +half, 폭 +HANGUL_TIGHTEN
+            for tv in gvar.variations.get(name, []):
+                if tv.axes["wght"][1] != 1.0:
+                    continue
+                d = tv.coordinates
+                if None in d and coords is not None:
+                    d = iup_delta(d, coords, ends)
+                d = [p if p is not None else (0, 0) for p in d]
+                n_main = len(d) - 4
+                tv.coordinates = [(round(x + half), round(y)) if i < n_main else
+                                  ((round(x + HANGUL_TIGHTEN), round(y)) if i == n_main + 1 else (round(x), round(y)))
+                                  for i, (x, y) in enumerate(d)]
+                if coords is not None:  # 다시 줄인다(IUP) — 풀어 둔 채로 두면 gvar가 1MB 넘게 커진다
+                    now, ctrl = glyf._getCoordinatesAndControls(name, hmtx.metrics, None)
+                    tv.optimize(now, ctrl.endPts, tolerance=0.5)
             changed += 1
     return changed
 
@@ -364,11 +427,11 @@ def center_symbols(font):
         if n not in glyf.glyphs:
             continue
         g = glyf[n]
-        g.recalcBounds(glyf)
-        dy = round(SYMBOL_CENTER - (g.yMin + g.yMax) / 2)
         # 이미 옮긴 기호를 부품으로 쓰는 .case는 세로만 맞춘다(가로 여백은 부품이 이미 가짐)
         inherited = g.isComposite() and all(c.glyphName in SYMBOLS for c in g.components)
-        _shift(font, n, 0 if inherited else SYMBOL_SPACE, dy)
+        details.center_y(font, n, SYMBOL_CENTER)
+        if SYMBOL_SPACE and not inherited:
+            _shift(font, n, SYMBOL_SPACE, 0)
         adv, _ = hmtx[n]
         hmtx[n] = (adv + 2 * SYMBOL_SPACE, glyf[n].xMin)
         done += 1
@@ -376,7 +439,11 @@ def center_symbols(font):
 
 
 def raise_brackets(font):
+    glyf = font["glyf"]
     for n in BRACKETS:
+        g = glyf[n]
+        if g.isComposite() and all(c.glyphName in BRACKETS for c in g.components):
+            continue  # ) ] } 는 ( [ { 를 뒤집은 부품이라 이미 따라 올라갔다(두 번 올리면 +220)
         _shift(font, n, 0, BRACKET_RAISE)
         font["hmtx"][n] = (font["hmtx"][n][0], font["glyf"][n].xMin)
 
@@ -450,26 +517,8 @@ languagesystem latn dflt;
 
 @AQ_FIG = [zero one two three four five six seven eight nine
            uniE071 uniE072 uniE073 uniE074 uniE075 uniE076 uniE077 uniE078 uniE079 uniE07A];
-@AQ_HYPHEN = [hyphen hyphen.case];
-@AQ_BEFORE = [@AQ_FIG A-Z a-z @AQ_HYPHEN minus minus.case];
 
-# 금액·비율 앞의 '-'(Intl.NumberFormat이 내는 U+002D)를 '−'(minus.case) 모양으로.
-# 앞 글자가 숫자·영문이면(ISRC KR-A12-26, 날짜 2026-10-23, 전화 010-1234) 그대로 둔다.
-lookup AQ_MINUS {
-    # 앞선 calt가 숫자 앞 '-'를 hyphen.case로 이미 바꿔 두므로 둘 다 받는다.
-    ignore sub @AQ_BEFORE @AQ_HYPHEN' @AQ_FIG;
-    sub @AQ_HYPHEN' @AQ_FIG by minus.case;  # U+2212를 직접 쓸 때와 같은 높이(숫자 가운데)
-} AQ_MINUS;
-
-# 브라우저는 letter-spacing이 0이 아니면 calt를 끈다(어데닉 금액은 자간을 쓴다).
-# rclt(필수 문맥 대체)는 꺼지지 않으므로 같은 룩업을 둘 다에 건다.
-feature calt {
-    lookup AQ_MINUS;
-} calt;
-
-feature rclt {
-    lookup AQ_MINUS;
-} rclt;
+# 금액 앞 '-' → '−' 규칙(AQ_MINUS)은 글리프 목록 전체가 필요해서 details.detail_fea()에서 만든다.
 
 # 어데닉 로고: 'AUDENIQ'를 대문자로 쓰고 ss20을 켜면 워드마크 한 글자가 된다(기본은 꺼짐 — 문장 속 AUDENIQ는 글자 그대로).
 feature ss20 {
@@ -542,10 +591,34 @@ def _merge_table(dst, src, remap):
         for srec in dst.ScriptList.ScriptRecord:
             systems = [srec.Script.DefaultLangSys] + [r.LangSys for r in srec.Script.LangSysRecord]
             for ls in systems:
-                if ls is not None:
+                if ls is not None and index not in ls.FeatureIndex:
                     ls.FeatureIndex.append(index)
                     ls.FeatureCount = len(ls.FeatureIndex)
     dst.FeatureList.FeatureCount = len(dst.FeatureList.FeatureRecord)
+    _sort_features(dst)
+
+
+def _sort_features(table):
+    """기능 목록을 태그 이름순으로(OpenType 규격, OTS 경고). 언어 체계의 번호도 옮긴다."""
+    recs = table.FeatureList.FeatureRecord
+    order = sorted(range(len(recs)), key=lambda i: (recs[i].FeatureTag, i))
+    new_index = {old: new for new, old in enumerate(order)}
+    table.FeatureList.FeatureRecord = [recs[i] for i in order]
+    seen = set()  # 여러 문자 체계가 같은 언어 체계 객체를 함께 쓰기도 한다 — 한 번씩만 옮긴다
+    for srec in table.ScriptList.ScriptRecord:
+        for ls in [srec.Script.DefaultLangSys] + [r.LangSys for r in srec.Script.LangSysRecord]:
+            if ls is None or id(ls) in seen:
+                continue
+            seen.add(id(ls))
+            ls.FeatureIndex = sorted(new_index[i] for i in ls.FeatureIndex)
+            if ls.ReqFeatureIndex != 0xFFFF:
+                ls.ReqFeatureIndex = new_index[ls.ReqFeatureIndex]
+    # 굵기에 따라 기능을 바꿔 끼우는 표도 기능을 번호로 가리킨다(Pretendard는 rlig를 굵기별로 바꾼다)
+    fv = getattr(table, "FeatureVariations", None)
+    if fv is not None:
+        for rec in fv.FeatureVariationRecord:
+            for sub in rec.FeatureTableSubstitution.SubstitutionRecord:
+                sub.FeatureIndex = new_index[sub.FeatureIndex]
 
 
 # ---------------------------------------------------------------- 4. 이름
@@ -661,6 +734,8 @@ def main():
     font = TTFont(var_src, lazy=False)  # gvar를 먼저 다 풀어야 글리프를 바꿔도 점 개수가 어긋나지 않는다
 
     remap_weight(font)
+    r, c = keep_unrelated_composites(font)
+    print(f"바꿀 글리프를 부품으로 쓰는 다른 글리프 {r}곳 → 원래 모양 복사본 {c}개")
     print("굵기: " + ", ".join(f"{u}→{o}" for u, o in WEIGHT_MAP.items()))
     n = tighten_hangul(font)
     print(f"한글 {n}자 자간 -{HANGUL_TIGHTEN}유닛")
@@ -683,6 +758,7 @@ def main():
     print(f"어데닉 로고 U+{brand.WORDMARK_CP:04X}, U+{brand.MARK_CP:04X}, ss20")
     merge_features(font, EXTRA_FEA + details.detail_fea(font))
     rename(font)
+    font["OS/2"].recalcAvgCharWidth(font)
 
     for d in ("variable", "static", "web"):
         os.makedirs(os.path.join(OUT, d), exist_ok=True)

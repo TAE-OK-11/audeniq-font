@@ -58,6 +58,44 @@ def _bounds_at(font, name, n):
     return pen.bounds
 
 
+def center_y(font, name, target):
+    """글리프의 세로 가운데를 모든 굵기에서 target으로. 원래 기호는 굵어질수록 위로 움직이기도 해서
+    (Pretendard의 + 는 400 → 900에서 +21), 마스터마다 옮길 양을 따로 구해 굵기 차이값에 더한다."""
+    from fontTools.varLib.iup import iup_delta
+    glyf, gvar = font["glyf"], font["gvar"]
+    g = glyf[name]
+    dy = {}
+    for n in (-1.0, 0.0, 1.0):
+        b = _bounds_at(font, name, n)
+        dy[n] = round(target - (b[1] + b[3]) / 2)
+    if g.isComposite():
+        coords, ends = None, None
+    else:
+        coords, ctrl = glyf._getCoordinatesAndControls(name, font["hmtx"].metrics, None)
+        ends = ctrl.endPts
+    for tv in gvar.variations.get(name, []):
+        peak = tv.axes["wght"][1]
+        extra = dy.get(peak, 0) - dy[0.0]
+        if not extra:
+            continue
+        d = tv.coordinates
+        if None in d and coords is not None:
+            d = iup_delta(d, coords, ends)
+        n_main = len(d) - 4
+        tv.coordinates = [(round(x), round(y + extra)) if i < n_main else (round(x), round(y))
+                          for i, (x, y) in enumerate((p if p is not None else (0, 0)) for p in d)]
+    if g.isComposite():
+        for c in g.components:
+            c.y += dy[0.0]
+    else:
+        g.coordinates.translate((0, dy[0.0]))
+        now, ctrl = glyf._getCoordinatesAndControls(name, font["hmtx"].metrics, None)
+        for tv in gvar.variations.get(name, []):
+            if None not in tv.coordinates:
+                tv.optimize(now, ctrl.endPts, tolerance=0.5)
+    g.recalcBounds(glyf)
+
+
 def _follow(font, name, place):
     """부품 하나짜리 글리프의 부품 위치를 마스터마다 place(부품 잉크 상자) → (dx, dy)로 다시 잡는다."""
     g = font["glyf"][name]
@@ -79,19 +117,40 @@ def _bounds(font, name):
     return g.xMin, g.yMin, g.xMax, g.yMax
 
 
+def decompose(font, name):
+    """늘이거나 줄인 부품을 외곽선으로 풀어 둔다(일부 렌더러가 변환된 부품을 잘못 그린다 — fontbakery
+    transformed-components). 세 마스터에서 각각 풀어 같은 점 구조의 굵기 차이값을 만든다."""
+    from fontTools.pens.recordingPen import DecomposingRecordingPen
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+    glyf, gvar = font["glyf"], font["gvar"]
+    outlines = {}
+    for n in (-1.0, 0.0, 1.0):
+        gs = font.getGlyphSet(location={"wght": n}, normalized=True)
+        rec = DecomposingRecordingPen(gs)
+        gs[name].draw(rec)
+        pen = TTGlyphPen(None)
+        rec.replay(pen)
+        outlines[n] = pen.glyph()
+    adv = {n: font.getGlyphSet(location={"wght": n}, normalized=True)[name].width for n in outlines}
+    base = outlines[0.0]
+    base.recalcBounds(glyf)
+    glyf[name] = base
+    variations = []
+    for n, axes in MASTER_TUPLES:
+        o = outlines[n]
+        assert len(o.coordinates) == len(base.coordinates), name
+        pts = [(round(x1 - x0), round(y1 - y0)) for (x1, y1), (x0, y0) in zip(o.coordinates, base.coordinates)]
+        pts += [(0, 0), (round(adv[n] - adv[0.0]), 0), (0, 0), (0, 0)]
+        variations.append(TupleVariation(axes, pts))
+    gvar.variations[name] = variations
+    font["hmtx"][name] = (round(adv[0.0]), base.xMin)
+
+
 def add_detail_glyphs(font):
     hmtx = font["hmtx"]
     # 숫자를 키운 만큼 ':'·'-'의 가운데도 올린다(.case는 대문자 가운데 724에 있었다)
     for name, center in (("colon.case", CASE_COLON_CENTER), ("hyphen.case", CASE_HYPHEN_CENTER)):
-        g = font["glyf"][name]
-        x0, y0, x1, y1 = _bounds(font, name)
-        dy = round(center - (y0 + y1) / 2)
-        if g.isComposite():
-            for c in g.components:
-                c.y += dy
-        else:
-            g.coordinates.translate((0, dy))
-        g.recalcBounds(font["glyf"])
+        center_y(font, name, center)
     # ' · ' — 점은 그대로, 폭만 좁게, 높이는 기호 가운데
     x0, y0, x1, y1 = _bounds(font, "period")
     _composite(font, "aq.periodcentered.spaced",
@@ -126,6 +185,8 @@ def add_detail_glyphs(font):
     dx = (cx0 + cx1) / 2 - (px0 + px1) / 2 * k
     dy = (cy0 + cy1) / 2 - (py0 + py1) / 2 * k
     _composite(font, "uni2117", [(src, dx, dy, (k, k))], hmtx["copyright"][0])
+    for name in ("uni2117", "aq.emdash.spaced"):
+        decompose(font, name)
 
 
 HANGUL_PUNCT = ("period", "exclam", "ellipsis.hang")  # 한글 뒤에서 한글 사이 간격만큼으로 당길 문장부호
@@ -160,7 +221,31 @@ def detail_fea(font):
     kerns = _hangul_kerns(font)
     kern_rules = "\n".join(f"    pos @AQ_HANGUL {g} {v};" for g, v in kerns.items() if v)
     hangul = " ".join(sorted({cmap[u] for u in range(0xAC00, 0xD7A4) if u in cmap}))
+    allowed = {cmap[u] for u in (0x20, 0xA0, 0x3000, 0x28, 0x5B, 0x7B) if u in cmap}
+    allowed |= {n for n in ("parenleft.case", "bracketleft.case", "braceleft.case") if n in font.getReverseGlyphMap()}
+    not_sign = " ".join(n for n in font.getGlyphOrder() if n not in allowed and not n.startswith(".notdef"))
     return f"""
+# 금액·비율 앞의 '-'(Intl.NumberFormat이 내는 U+002D)를 '−'(minus.case) 모양으로.
+# 바꾸는 것은 앞이 비었거나(줄 처음) 띄어쓰기·여는 괄호일 때뿐이다('-22,000원', '환불 -3', '(-5%)').
+# 그 밖에는 모두 그대로: ISRC KR-A12-26, 날짜 2026-10-23, 전화 010-1234, 가린 계좌 ***-**-5678, CSV ,-2
+@AQ_HYPHEN = [hyphen hyphen.case];
+@AQ_NOT_SIGN = [{not_sign}];
+lookup AQ_MINUS {{
+    # 앞선 calt가 숫자 앞 '-'를 hyphen.case로 이미 바꿔 두므로 둘 다 받는다.
+    ignore sub @AQ_NOT_SIGN @AQ_HYPHEN' @AQ_FIG;
+    sub @AQ_HYPHEN' @AQ_FIG by minus.case;  # U+2212를 직접 쓸 때와 같은 높이(숫자 가운데)
+}} AQ_MINUS;
+
+# 브라우저는 letter-spacing이 0이 아니면 calt를 끈다(어데닉 금액은 자간을 쓴다).
+# rclt(필수 문맥 대체)는 꺼지지 않으므로 같은 룩업을 둘 다에 건다.
+feature calt {{
+    lookup AQ_MINUS;
+}} calt;
+
+feature rclt {{
+    lookup AQ_MINUS;
+}} rclt;
+
 @AQ_HANGUL = [{hangul}];
 @AQ_CODE = [@AQ_FIG A-Z];
 

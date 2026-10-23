@@ -27,6 +27,7 @@ AUDENIQ의 제품 서체예요. [Pretendard](https://github.com/orioncactus/pret
 pip install -r build/requirements.txt
 python3 build/build.py --check     # 원본을 npm에서 받아 해시 확인 → 빌드 → 검사
 python3 build/build.py --variable-only   # 가변 글꼴만 (빠름)
+python3 tests/audit.py                   # 전체 점검: 모든 글리프를 굵기 4개에서 Pretendard와 비교
 ```
 
 원본(`sources/`)은 저장소에 넣지 않아요. 빌드가 npm의 `pretendard@1.3.9`를 받아 SHA-1을 확인해요. `tests/check.py`는 이름, 굵기 대응, 한글 폭·높이, 숫자 크기·폭·진하기, 기호·괄호 높이, 띄어쓰기·가운뎃점, 빼기 기호 규칙, 고정폭 숫자, 세로 중심, 로고 글자, 고정 굵기 글꼴의 기능 이름을 검사해요.
